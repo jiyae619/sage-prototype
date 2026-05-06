@@ -31,3 +31,7 @@
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--color-page); color: var(--color-ink); font-family: 'Inter', system-ui, sans-serif; }
 * { box-sizing: border-box; }
+
+/* Smooth side-panel transitions */
+@keyframes slideInLeft  { from { width: 0;     opacity: 0 } to { width: 280px; opacity: 1 } }
+@keyframes slideInRight { from { width: 0;     opacity: 0 } to { width: 340px; opacity: 1 } }

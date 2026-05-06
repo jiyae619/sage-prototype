@@ -337,8 +337,8 @@ export function WorksheetScreen({ go, toast, aiOn, setAiOn, collapsed, setCollap
             <span className="text-ink">{selectedRow === 'eq' ? '5000' : '=Salary.Lookup("GradRA","Sch1","Doctoral")'}</span>
             <div className="flex-1" />
             <span className="text-[10px] text-mute whitespace-nowrap">LinkingLakes_Period1.xlsx</span>
-            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sage-50 text-[10px] text-sage-700 font-medium whitespace-nowrap">
-              <span className="w-1.5 h-1.5 rounded-full bg-sage-500" /> Saved 12s ago
+            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sage-50 text-[10px] text-sage-700 font-medium whitespace-nowrap" title="Autosave is on. The Capture button creates a named checkpoint.">
+              <span className="w-1.5 h-1.5 rounded-full bg-sage-500" /> Autosaved 12s ago
             </span>
           </div>
 
@@ -354,7 +354,18 @@ export function WorksheetScreen({ go, toast, aiOn, setAiOn, collapsed, setCollap
             {(() => {
               const issueRows = new Set(issues.map(i => i.cellRef))
               const cellProps = { issueRows, highlightedCell }
-              const onRowSelect = (id: string) => { setSelectedRow(id); setAddinOpen(true) }
+              // Excel row clicks only set selection; panel auto-opens ONLY when there's contextual data
+              // (linked PDF for the equipment row, an unresolved mismatch for F&A).
+              const onRowSelect = (id: string) => {
+                setSelectedRow(id)
+                if (id === 'eq' && pdfOpen) {
+                  setAddinOpen(true); setMismatchView(false)
+                } else if (id === 'fa' && issues.length > 0) {
+                  setAddinOpen(true); setMismatchView(true)
+                } else {
+                  // No contextual content for this row — leave panels alone
+                }
+              }
               return <>
                 <RowSheet
                   section="A. Personnel — Salary and Benefits"
@@ -424,7 +435,10 @@ export function WorksheetScreen({ go, toast, aiOn, setAiOn, collapsed, setCollap
             onClose={() => setMismatchView(false)}
           />
         )}
-        {addinOpen && !mismatchView && !piReviewOpen && <aside className="w-[340px] bg-white border-l border-bdLt flex flex-col overflow-hidden shrink-0">
+        {/* Only render Add-In if there's contextual data: linked PDF (eq+pdfOpen) or salary lookup (grad-ra). */}
+        {addinOpen && !mismatchView && !piReviewOpen && (
+          (selectedRow === 'eq' && pdfOpen) || selectedRow === 'grad-ra'
+        ) && <aside className="w-[340px] bg-white border-l border-bdLt flex flex-col overflow-hidden shrink-0 animate-[slideInRight_220ms_ease-out]">
           <div className="bg-sage-700 text-white px-4 py-3 flex items-center justify-between text-[13px] font-semibold">
             <span>SAGE Add-In</span>
             <div className="flex gap-1">
@@ -492,13 +506,7 @@ export function WorksheetScreen({ go, toast, aiOn, setAiOn, collapsed, setCollap
                   </div>
                 )}
               </>
-            ) : (
-              <p className="text-[12px] text-sub leading-relaxed">Click a row in the worksheet to see contextual data, source tags, and AI suggestions for that line.</p>
-            )}
-          </div>
-          <div className="border-t border-bdLt p-3 flex gap-2">
-            <Button variant="ghost" onClick={() => toast('Worksheet saved as v3 (snapshot taken)')}>Save snapshot</Button>
-            <Button variant="primary" onClick={() => go('import')} icon={<span>→</span>}>Import to SAGE</Button>
+            ) : null}
           </div>
         </aside>}
 
@@ -513,7 +521,7 @@ export function WorksheetScreen({ go, toast, aiOn, setAiOn, collapsed, setCollap
             onClick={() => { setAddinOpen(true); setSelectedRow('grad-ra'); toast('Add personnel — fill in the right panel.') }}
             icon={<PersonAddIcon />} />
           <FloatingBtn tooltip="Travel"
-            onClick={() => { setAddinOpen(true); setSelectedRow('agu'); toast('Add travel — fill in the right panel.') }}
+            onClick={() => { setAddinOpen(true); setSelectedRow('grad-ra'); toast('Add travel — opens the line editor (demo uses personnel form).') }}
             icon={<PlaneAddIcon />} />
           <FloatingBtn tooltip="Lookup"
             onClick={() => { setAddinOpen(true); setSelectedRow('grad-ra'); toast('Salary lookup opened in the right panel.') }}
@@ -531,6 +539,14 @@ export function WorksheetScreen({ go, toast, aiOn, setAiOn, collapsed, setCollap
           {piReviewStatus === 'changes_requested' && (
             <FloatingBtnAlert tooltip="PI has requested changes" onClick={() => setPiReviewOpen(true)} icon={<ExternalLinkIcon />} label="Action Required" />
           )}
+          <span className="w-px h-6 bg-bd mx-1 shrink-0" aria-hidden />
+          <FloatingBtn tooltip="Capture snapshot"
+            onClick={() => toast('Snapshot captured · v3 (autosave is on; this preserves a labeled checkpoint).')}
+            icon={<CameraIcon />} />
+          <button onClick={() => go('import')}
+            className="ml-1 inline-flex items-center gap-1.5 px-3.5 h-9 rounded-full bg-sage-600 text-white text-[12px] font-semibold whitespace-nowrap leading-none hover:bg-sage-700 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 shrink-0">
+            Import to SAGE <span aria-hidden>→</span>
+          </button>
         </FloatingActionBar>
       </div>
 
@@ -648,7 +664,7 @@ function RowSheet({ section, rows, selectedRow, onSelect, aiOn, issueRows, highl
 // =====================================================================
 function PdfPreviewPanel({ onClose }: { onClose: () => void }) {
   return (
-    <aside className="w-[280px] bg-[#F5EFD5] border-r border-bdLt flex flex-col overflow-hidden">
+    <aside className="w-[280px] bg-[#F5EFD5] border-r border-bdLt flex flex-col overflow-hidden animate-[slideInLeft_220ms_ease-out]">
       <div className="h-9 px-3.5 flex items-center gap-2 text-[11px] text-mute">
         <span>📎</span>
         <span className="font-medium">Equipment_Invoice_v1.pdf</span>
@@ -737,6 +753,14 @@ function PlaneAddIcon() {
 }
 function LookupIcon()    { return <Svg><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></Svg> }
 function CheckIcon()     { return <Svg><polyline points="20 6 9 17 4 12" /></Svg> }
+function CameraIcon() {
+  return (
+    <Svg>
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+      <circle cx="12" cy="13" r="4" />
+    </Svg>
+  )
+}
 function SendReviewIcon() {
   return <Svg><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></Svg>
 }

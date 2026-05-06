@@ -250,7 +250,7 @@ export function MismatchPanel({
   const diff = target - currentTotal
   const calculated = currentTotal
   return (
-    <aside className="w-[340px] bg-white border-l border-bdLt flex flex-col overflow-hidden shrink-0">
+    <aside className="w-[340px] bg-white border-l border-bdLt flex flex-col overflow-hidden shrink-0 animate-[slideInRight_220ms_ease-out]">
       <div className="bg-amber-700 text-white px-4 py-3 flex items-center justify-between text-[13px] font-semibold">
         <span className="flex items-center gap-2"><span aria-hidden>⚠</span> Budget Mismatch</span>
         <button onClick={onClose} className="text-[11px] px-2 py-1 border border-white/40 rounded hover:bg-white/10" title="Close">Close</button>
