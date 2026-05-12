@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SAGE Budgeting — End-to-End Process Overview</title>
+<style>
+  :root {
+    --page: #F7F4E9;
+    --card: #FFFFFF;
+    --ink: #1F2421;
+    --mute: #5C6660;
+    --sub: #8A8F88;
+    --bdLt: #E5E2D4;
+    --bd: #CFCBB9;
+    --sage-50: #EEF3EB;
+    --sage-100: #DCE8D6;
+    --sage-500: #6F9A6B;
+    --sage-600: #4C7A55;
+    --sage-700: #355742;
+    --sage-900: #1F3A2A;
+    --amber-50: #FBF1D6;
+    --amber-bd: #E0B95B;
+    --amber-700: #8B6A18;
+    --red: #B5341F;
+    --red-50: #FCE9E4;
+    --purple-100: #ECE6F7;
+    --purple-700: #5B4598;
+    --yellow-hi: #FFF6CF;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 48px 32px 96px; }
+  header.hero { margin-bottom: 32px; }
+  .eyebrow {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--sage-700);
+  }
+  h1 {
+    font-size: 32px; font-weight: 700; margin: 6px 0 8px;
+    letter-spacing: -0.01em;
+  }
+  .lede { color: var(--mute); font-size: 15px; max-width: 820px; }
+  .legend {
+    display: inline-flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    margin-top: 16px; padding: 10px 14px;
+    background: var(--card); border: 1px solid var(--bdLt); border-radius: 10px;
+    font-size: 12px; color: var(--mute);
+  }
+  .legend .dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; vertical-align: middle; margin-right: 6px; }
+  .legend .green { background: var(--sage-500); }
+  .legend .purple { background: var(--purple-700); }
+  .legend .amber { background: var(--amber-bd); }
+
+  h2.section {
+    font-size: 20px; margin: 48px 0 16px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  h2.section .num {
+    display: inline-block; width: 28px; height: 28px; line-height: 28px;
+    background: var(--sage-600); color: white; border-radius: 8px;
+    text-align: center; font-size: 13px; font-weight: 700;
+  }
+
+  /* Top nav strip illustration */
+  .topnav {
+    background: var(--sage-700); color: white;
+    border-radius: 12px 12px 0 0;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  .topnav .userbar {
+    padding: 8px 16px; display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid rgba(0,0,0,0.15);
+  }
+  .topnav .brand { font-weight: 700; letter-spacing: 0.05em; }
+  .topnav .tabrow { display: flex; padding: 0 12px; }
+  .topnav .tab {
+    padding: 8px 16px; font-size: 10px;
+    letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700;
+    color: rgba(255,255,255,0.78);
+    position: relative;
+  }
+  .topnav .tab.active {
+    background: var(--page); color: var(--sage-700);
+  }
+  .topnav .tab.new::after {
+    content: "NEW";
+    position: absolute; top: 4px; right: 4px;
+    background: #d6a017; color: white;
+    font-size: 7px; padding: 1px 3px; border-radius: 2px;
+  }
+  .topnav .tab.active.new::after {
+    background: var(--sage-700); color: white;
+  }
+
+  /* Journey */
+  .journey {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+  }
+  @media (max-width: 1180px) { .journey { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 760px)  { .journey { grid-template-columns: 1fr; } }
+
+  .stage {
+    background: var(--card); border: 1px solid var(--bdLt); border-radius: 12px;
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .stage .badge {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px; border-bottom: 1px solid var(--bdLt);
+    background: var(--sage-50); color: var(--sage-700);
+    font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .stage .badge .step {
+    width: 22px; height: 22px; border-radius: 6px;
+    background: var(--sage-600); color: white;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px;
+  }
+  .stage h3 {
+    font-size: 14px; margin: 12px 14px 4px; font-weight: 700;
+  }
+  .stage .who { font-size: 11px; color: var(--mute); margin: 0 14px 10px; }
+  .stage .body {
+    padding: 0 14px 12px; font-size: 12px; color: var(--ink); flex: 1;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .stage .body p { margin: 0; color: var(--mute); }
+  .stage .tab-tag {
+    margin: 0 14px 8px;
+    display: inline-block;
+    font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--purple-700); background: var(--purple-100);
+    padding: 3px 8px; border-radius: 999px;
+    align-self: flex-start;
+    font-weight: 700;
+  }
+
+  .ai {
+    border-top: 1px solid var(--bdLt);
+    background: var(--purple-100);
+    padding: 10px 14px;
+    font-size: 11px;
+  }
+  .ai .ai-eyebrow {
+    color: var(--purple-700); font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.1em; font-size: 9px; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .ai ul { margin: 0; padding-left: 16px; color: var(--ink); }
+  .ai li { margin: 3px 0; }
+
+  /* Detailed flow */
+  .flowstep {
+    background: var(--card); border: 1px solid var(--bdLt); border-radius: 12px;
+    padding: 18px 22px; margin-bottom: 14px;
+    display: grid; grid-template-columns: 56px 1fr 360px; gap: 18px; align-items: start;
+  }
+  @media (max-width: 900px) {
+    .flowstep { grid-template-columns: 56px 1fr; }
+    .flowstep .ai-card { grid-column: 2; }
+  }
+  .flowstep .step-num {
+    width: 40px; height: 40px; border-radius: 10px;
+    background: var(--sage-600); color: white;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px;
+  }
+  .flowstep h3 { margin: 2px 0 4px; font-size: 16px; }
+  .flowstep .who-line { color: var(--mute); font-size: 12px; margin-bottom: 8px; }
+  .flowstep .what { margin: 0; color: var(--ink); font-size: 13px; }
+  .flowstep .what ul { margin: 6px 0 0; padding-left: 18px; }
+  .flowstep .what li { margin: 3px 0; color: var(--mute); }
+  .flowstep .what li b { color: var(--ink); font-weight: 600; }
+  .ai-card {
+    background: var(--purple-100); border-radius: 10px; padding: 12px 14px;
+    border: 1px solid color-mix(in srgb, var(--purple-700) 25%, white);
+  }
+  .ai-card .head {
+    color: var(--purple-700); font-weight: 700; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .ai-card ul { margin: 0; padding-left: 16px; font-size: 12px; }
+  .ai-card li { margin: 4px 0; color: var(--ink); }
+
+  /* Gate callout */
+  .gate {
+    background: var(--amber-50); border: 1px solid var(--amber-bd);
+    border-radius: 12px; padding: 16px 20px;
+    margin: 16px 0;
+  }
+  .gate .label {
+    color: var(--amber-700); font-weight: 700;
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .gate h4 { margin: 0 0 6px; font-size: 14px; }
+  .gate p { margin: 0; font-size: 12.5px; color: var(--ink); }
+
+  /* Formula table */
+  table.formulas {
+    width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px;
+  }
+  table.formulas th, table.formulas td {
+    text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--bdLt);
+    vertical-align: top;
+  }
+  table.formulas th {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--sub); font-weight: 700;
+  }
+  table.formulas td.label { font-weight: 600; }
+  table.formulas td.formula {
+    font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px;
+    color: var(--sage-700);
+  }
+
+  /* Brainstorm */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--card); border: 1px solid var(--bdLt); border-radius: 12px; padding: 18px 20px;
+  }
+  .card h3 { margin: 0 0 4px; font-size: 15px; }
+  .card .sub { color: var(--mute); font-size: 12px; margin-bottom: 10px; }
+
+  footer { margin-top: 64px; color: var(--sub); font-size: 11px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">Process Overview · SAGE × Workspace × AI</div>
+    <h1>From blank Workspace to Award Setup Request — the end-to-end journey</h1>
+    <p class="lede">
+      A new tab — <b>Workspace</b> — joins SAGE's top nav, alongside <b>Files</b>. The Workspace replaces
+      the old left-rail step flow: it is where the GM drafts and reconciles the budget. eGC1, Awards (NoA →
+      Reconciliation → ASR), and Files all hang off the same top nav.
+    </p>
+    <div class="legend">
+      <span><span class="dot green"></span>Green memo = trusted, prefilled, sourced</span>
+      <span><span class="dot purple"></span>Purple memo = AI assist (toggleable)</span>
+      <span><span class="dot amber"></span>Amber memo = something to confirm or reconcile</span>
+    </div>
+  </header>
+
+  <!-- Top nav illustration -->
+  <div class="topnav">
+    <div class="userbar">
+      <span class="brand">SAGE</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11px; opacity:0.9">Hermione Granger</span>
+    </div>
+    <div class="tabrow">
+      <span class="tab">Budgets</span>
+      <span class="tab">eGC1 Forms</span>
+      <span class="tab">Approvals</span>
+      <span class="tab">Advances</span>
+      <span class="tab">Awards</span>
+      <span class="tab">Subawards</span>
+      <span class="tab active new">Workspace</span>
+      <span class="tab new">Files</span>
+    </div>
+  </div>
+
+  <h2 class="section"><span class="num">A</span> The five stages, at a glance</h2>
+
+  <div class="journey">
+    <!-- Stage 1: Workspace draft -->
+    <article class="stage">
+      <div class="badge"><span class="step">1</span> Workspace draft</div>
+      <span class="tab-tag">Workspace tab</span>
+      <h3>Build the budget in blank Excel</h3>
+      <p class="who">GM, in the Workspace tab · pre-award</p>
+      <div class="body">
+        <p>Workspace opens blank. Type rows directly, paste from past budgets, or click "AI prefill" to populate from similar past proposals. Each row uses real formulas — salary × effort × months, F&amp;A on MTDC base — recalculating live.</p>
+      </div>
+      <div class="ai">
+        <div class="ai-eyebrow">✦ AI assist · Workspace</div>
+        <ul>
+          <li>One-click prefill from 3 similar past proposals (sponsor, mechanism, dept)</li>
+          <li>Suggest a proposed total from past similar awards (median, avg, range)</li>
+          <li>Live UW Grad School + OPB rate lookup for salary and tuition</li>
+          <li>OCR linked invoices and propose row links</li>
+          <li>Pre-award mode: <b>no NoA reconciliation UI</b> — reconciliation is locked until Awards › NoA</li>
+        </ul>
+      </div>
+    </article>
+
+    <!-- Stage 2: eGC1 -->
+    <article class="stage">
+      <div class="badge"><span class="step">2</span> eGC1 proposal</div>
+      <span class="tab-tag">eGC1 Forms tab</span>
+      <h3>Auto-populate the eGC1 form</h3>
+      <p class="who">GM, jumps to eGC1 Forms tab</p>
+      <div class="body">
+        <p>The eGC1 Budget &amp; Fiscal Compliance section auto-fills from Workspace rows, mapped to FAS Object Codes (01 Salaries, 04 Travel, 05 Supplies, 07 Benefits, 08 Student Aid). A "live preview" banner shows the form is mirroring Workspace; edits flow back via the "Edit in Workspace" link.</p>
+      </div>
+      <div class="ai">
+        <div class="ai-eyebrow">✦ AI assist · eGC1</div>
+        <ul>
+          <li>Map Workspace rows → FAS object codes automatically</li>
+          <li>Pre-answer Fiscal Compliance Q&amp;A based on rate selection + cost sharing</li>
+          <li>Surface mismatches between Workspace formulas and form values</li>
+          <li>Submit gates routing to Department › OSP</li>
+        </ul>
+      </div>
+    </article>
+
+    <!-- Stage 3: NoA -->
+    <article class="stage">
+      <div class="badge"><span class="step">3</span> Notice of Award</div>
+      <span class="tab-tag">Awards tab · sub-stage 1</span>
+      <h3>Upload &amp; extract NoA fields</h3>
+      <p class="who">GM, when award arrives</p>
+      <div class="body">
+        <p>Drop the NoA PDF inside the Awards tab. OCR + sponsor template match (NIH NoA v13) extracts 14 fields. A quick diff vs Workspace shows shortfall/surplus.</p>
+      </div>
+      <div class="ai">
+        <div class="ai-eyebrow">✦ AI assist · NoA</div>
+        <ul>
+          <li>Structured extraction across NIH/NSF/NASA/DOE templates</li>
+          <li>Confidence + source attribution per field</li>
+          <li>Stage the diff vs Workspace for the next sub-stage</li>
+        </ul>
+      </div>
+    </article>
+
+    <!-- Stage 4: Reconciliation -->
+    <article class="stage">
+      <div class="badge"><span class="step">4</span> Reconciliation</div>
+      <span class="tab-tag">Awards tab · sub-stage 2</span>
+      <h3>Acknowledge &amp; unlock workspace</h3>
+      <p class="who">GM, after NoA upload</p>
+      <div class="body">
+        <p>Side-by-side cards: Workspace draft vs NoA awarded. PI notification, date impact (e.g., FY boundary crossing). Acknowledging flips Workspace into <b>reconciliation mode</b> — mismatch UI activates, NoA total becomes the new target.</p>
+      </div>
+      <div class="ai">
+        <div class="ai-eyebrow">✦ AI assist · Reconciliation</div>
+        <ul>
+          <li>Plain-English summary of what changed and why</li>
+          <li>Detect rate boundary crossings (FY, salary escalation)</li>
+          <li>Draft the PI notification message</li>
+          <li>Flag rows likely to absorb the delta</li>
+        </ul>
+      </div>
+    </article>
+
+    <!-- Stage 5: ASR -->
+    <article class="stage">
+      <div class="badge"><span class="step">5</span> Award Setup Request</div>
+      <span class="tab-tag">Awards tab · sub-stage 3</span>
+      <h3>Map &amp; route to GCA</h3>
+      <p class="who">GM submits · PI SFI gate</p>
+      <div class="body">
+        <p>Mapping preview: every Workspace row → SAGE FAS object code. Pre-submission checklist gates submit on PI SFI. Final ASR routes Department › OSP › GCA.</p>
+      </div>
+      <div class="ai">
+        <div class="ai-eyebrow">✦ AI assist · ASR</div>
+        <ul>
+          <li>Validate every line maps to a valid SAGE object code</li>
+          <li>Draft the routing comment with budget vs NoA reconciliation summary</li>
+          <li>Auto-nudge the PI for SFI when only that gate remains</li>
+        </ul>
+      </div>
+    </article>
+  </div>
+
+  <!-- The reconciliation gate -->
+  <div class="gate">
+    <div class="label">Important design rule</div>
+    <h4>Reconciliation is gated, not always-on</h4>
+    <p>
+      Pre-award the Workspace shows <b>no NoA mismatches</b> — it is a clean draft surface. The mismatch UI,
+      red-row highlights, and "NoA target" reconciliation bar only appear after the GM explicitly opens
+      <b>Awards › Reconciliation</b> and acknowledges the diff. This prevents the Workspace from feeling
+      "broken" before an award even exists.
+    </p>
+  </div>
+
+  <!-- Detailed flow row -->
+  <h2 class="section"><span class="num">B</span> Detailed flow with AI per stage</h2>
+
+  <div class="flowstep">
+    <div class="step-num">1</div>
+    <div>
+      <h3>Workspace · blank Excel with formulas</h3>
+      <div class="who-line">The new starting point. Workspace tab is selected by default.</div>
+      <div class="what">
+        <p>The GM lands on Workspace. Excel grid is blank — empty inputs for name, role, salary, effort, months. Sum row reads $0. The Proposed total field is empty; an AI button suggests a value from similar past proposals.</p>
+        <ul>
+          <li><b>Formulas per row:</b> personnel = salary × effort × months; fringe = rate × Σ personnel; tuition = per-quarter × students × quarters; F&amp;A = rate × MTDC base.</li>
+          <li><b>Live recalc:</b> change any input, all dependent subtotals + DC, F&amp;A, total update.</li>
+          <li><b>Live data:</b> UW Grad RA/TA salaries page and UW OPB Graduate Tuition Dashboard are linked from the right-panel Add-In.</li>
+          <li><b>No NoA UI yet:</b> the reconciliation bar shows "Sum vs Proposed", no mismatches, no red rows.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="ai-card">
+      <div class="head">✦ AI assist · Workspace</div>
+      <ul>
+        <li>"AI prefill all rows" from 3 similar NIH R34 vision proposals</li>
+        <li>Proposed total suggestion: median + avg from past awards, click-to-accept</li>
+        <li>Per-row source chips (Workday salary, OPB rate, F&amp;A agreement)</li>
+        <li>NIH Executive Level II cap warning on PI rows above the ceiling</li>
+        <li>OCR + invoice linking on Equipment row</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="flowstep">
+    <div class="step-num">2</div>
+    <div>
+      <h3>eGC1 Forms · auto-populated</h3>
+      <div class="who-line">Single click from Workspace's floating dock.</div>
+      <div class="what">
+        <p>Workspace rows flow into the eGC1 Budget &amp; Fiscal Compliance section, aggregated into FAS object codes. The form pre-answers Fiscal Compliance questions and connects the SAGE Budget automatically.</p>
+        <ul>
+          <li>Live preview — eGC1 mirrors Workspace until "Submit to Department" is clicked.</li>
+          <li>After submission, the form is locked but still visible.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="ai-card">
+      <div class="head">✦ AI assist · eGC1</div>
+      <ul>
+        <li>Map every Workspace row to its FAS code (01, 04, 05, 07, 08)</li>
+        <li>Pre-answer F-1/F-2/F-3 based on rate &amp; cost-sharing inputs</li>
+        <li>Surface any value drift between Workspace formula and form</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="flowstep">
+    <div class="step-num">3</div>
+    <div>
+      <h3>Awards · Notice of Award upload</h3>
+      <div class="who-line">When the sponsor's NoA PDF arrives.</div>
+      <div class="what">
+        <p>Drag-and-drop into the Awards tab's first sub-stage. AI does structured extraction. The Reconciliation sub-tab is <b>locked</b> until upload completes.</p>
+      </div>
+    </div>
+    <div class="ai-card">
+      <div class="head">✦ AI assist · NoA</div>
+      <ul>
+        <li>14 fields extracted with per-field confidence</li>
+        <li>Source chips back to PDF sections (§7, §I, §20, p.8)</li>
+        <li>Quick diff vs Workspace sum + total surplus/shortfall</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="flowstep">
+    <div class="step-num">4</div>
+    <div>
+      <h3>Awards · Reconciliation</h3>
+      <div class="who-line">The gate that activates the reconciliation UI in Workspace.</div>
+      <div class="what">
+        <p>Side-by-side amount + date deltas. PI notification CTA. Acknowledging this stage is the <b>single switch</b> that flips Workspace into reconciliation mode: the NoA total ($267,006) becomes the target, mismatch rows light up, the rounding-fix mismatch panel becomes available.</p>
+        <ul>
+          <li>The ASR sub-tab is <b>locked</b> until reconciliation is acknowledged.</li>
+          <li>After acknowledgement, the GM is routed back to Workspace to revise.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="ai-card">
+      <div class="head">✦ AI assist · Reconciliation</div>
+      <ul>
+        <li>Draft a one-paragraph PI notification</li>
+        <li>Predict which rows will absorb the delta</li>
+        <li>Plain-English explanation of the diff (e.g., "6-month delay crosses July 1")</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="flowstep">
+    <div class="step-num">5</div>
+    <div>
+      <h3>Awards · Award Setup Request (ASR)</h3>
+      <div class="who-line">Once Workspace matches NoA, ASR finalizes routing.</div>
+      <div class="what">
+        <p>Every Workspace row mapped to a SAGE object code. Pre-submission checklist. Blocked on PI SFI; one button sends a reminder. On submit, ASR routes Department › OSP › GCA.</p>
+      </div>
+    </div>
+    <div class="ai-card">
+      <div class="head">✦ AI assist · ASR</div>
+      <ul>
+        <li>Validate &amp; auto-suggest object codes for ambiguous rows</li>
+        <li>Generate the routing comment with budget vs NoA reconciliation summary</li>
+        <li>Auto-nudge PI for SFI; track completion</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2 class="section"><span class="num">C</span> Workspace formulas</h2>
+
+  <div class="card">
+    <h3>What recalculates as inputs change</h3>
+    <p class="sub">Each row carries its own input fields. Subtotals are derived, never typed. The total updates live.</p>
+    <table class="formulas">
+      <thead>
+        <tr><th>Row category</th><th>Inputs</th><th>Formula</th><th>Excluded from MTDC?</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="label">Personnel (PI / Grad RA)</td>
+          <td>monthly salary, effort %, months</td>
+          <td class="formula">ROUND(salary × effort × months)</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td class="label">Fringe benefits</td>
+          <td>rate</td>
+          <td class="formula">ROUND(Σ personnel × rate)</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td class="label">Travel</td>
+          <td>amount</td>
+          <td class="formula">amount</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td class="label">Supplies</td>
+          <td>amount</td>
+          <td class="formula">amount</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td class="label">Equipment</td>
+          <td>amount</td>
+          <td class="formula">amount</td>
+          <td>Only if &gt; $5,000 (capital)</td>
+        </tr>
+        <tr>
+          <td class="label">Grad RA tuition</td>
+          <td>per-quarter rate, # students, months</td>
+          <td class="formula">ROUND(per-quarter × students × months/3)</td>
+          <td><b>Yes</b></td>
+        </tr>
+        <tr>
+          <td class="label">F&amp;A indirect costs</td>
+          <td>rate (57.5% MTDC)</td>
+          <td class="formula">ROUND(MTDC_base × rate)</td>
+          <td>—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="section"><span class="num">D</span> Two-way sync — when SAGE Budget changes after import</h2>
+
+  <div class="card">
+    <h3>The question</h3>
+    <p class="sub">
+      Stages 1 → 5 push <b>Workspace → SAGE</b>. After ASR submits, SAGE Budget becomes the system of record.
+      If GCA edits SAGE (rounding fix, salary cap reduction, reallocation), what should the Workspace do?
+    </p>
+  </div>
+
+  <div class="grid2" style="margin-top:14px">
+    <div class="card">
+      <h3>Recommendation</h3>
+      <p class="sub">Start with <b>banner-only</b> notifications; graduate to <b>auto-pull with tracked changes</b> for known-safe categories.</p>
+      <ul style="font-size:12.5px; color:var(--mute); padding-left:18px; margin:6px 0 0">
+        <li><b>Auto-pull silently:</b> F&amp;A recalcs, fringe rate updates, salary cap reductions, tuition rate refreshes</li>
+        <li><b>Banner only:</b> direct cost reallocations (GCA moved $5k from Travel to Supplies)</li>
+        <li><b>Conflict UI:</b> personnel rows with unsaved Workspace edits</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Why this works in the new structure</h3>
+      <p class="sub">Tab-based nav makes the source of truth clear by context.</p>
+      <ul style="font-size:12.5px; color:var(--mute); padding-left:18px; margin:6px 0 0">
+        <li>In the <b>Workspace tab</b>, Workspace is the source.</li>
+        <li>In the <b>Budgets tab</b> (SAGE Budget record), SAGE is the source.</li>
+        <li>The banner appears in Workspace when a SAGE-side change differs from Workspace; click "review" to open a diff.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2 class="section"><span class="num">E</span> Open design questions</h2>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>1. Multiple Workspaces per budget?</h3>
+      <p>If a GM wants to compare two budget scenarios (best/worst case), should the Workspace tab support multiple drafts under one Budget ID?</p>
+    </div>
+    <div class="card">
+      <h3>2. Files tab and Workspace files</h3>
+      <p>Files tab shows everything (NoA, invoices, exports, snapshots). Workspace has a paperclip dock for invoices linked to rows. Should the Workspace also have an inline "Files for this budget" preview, or is the Files tab enough?</p>
+    </div>
+    <div class="card">
+      <h3>3. When is the Workspace "closed"?</h3>
+      <p>After ASR submit? After GCA finalizes? After project closeout? Each implies a different sync direction with SAGE Budget.</p>
+    </div>
+    <div class="card">
+      <h3>4. PI access vs GM access</h3>
+      <p>Today the prototype assumes the GM. If the PI logs in, should they see a read-only Workspace view + the PI Review panel? Or only the eGC1 / Awards tabs?</p>
+    </div>
+  </div>
+
+  <footer>
+    SAGE prototype · Process overview generated from /Users/jiyaechoi/dev/UW-SAGE/NIH-Grants-Process-Primer-Sample-NOA.pdf, the user-flow sketch IMG_3241.JPG, and current src/screens.tsx · 2026-05-12
+  </footer>
+</div>
+</body>
+</html>

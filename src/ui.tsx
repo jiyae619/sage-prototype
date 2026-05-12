@@ -390,13 +390,102 @@ export function AIToggle({ on, onChange, derivedCount }: { on: boolean; onChange
 // LAYOUT — sidebar nav + footer
 // =====================================================================
 
-export type StepKey = 'summary' | 'settings' | 'worksheet' | 'import'
-export const STEPS: { key: StepKey; label: string; icon: string }[] = [
-  { key: 'summary',   label: 'Summary (All Worksheets)',      icon: '▦' },
-  { key: 'settings',  label: 'Budget Settings',                icon: '⚙' },
-  { key: 'worksheet', label: 'NASA Linking Lakes — Worksheet', icon: '◫' },
-  { key: 'import',    label: 'Import to SAGE',                 icon: '↑' },
+// Legacy step-based sidebar keys (kept for type compatibility in older screens).
+export type StepKey = 'worksheet' | 'egc1' | 'noa' | 'summary' | 'settings' | 'import' | 'workspace'
+export const STEPS: { key: StepKey; label: string; icon: string }[] = []
+
+// Top-tab navigation — mirrors the SAGE web app
+export type TabKey = 'budgets' | 'egc1' | 'approvals' | 'advances' | 'awards' | 'subawards' | 'workspace' | 'files' | 'guide'
+export type AwardsStep = 'noa' | 'reconcile' | 'asr'
+
+export const TABS: { key: TabKey; label: string; isNew?: boolean; isTutorial?: boolean }[] = [
+  { key: 'budgets',   label: 'Budgets' },
+  { key: 'egc1',      label: 'eGC1 Forms' },
+  { key: 'approvals', label: 'Approvals' },
+  { key: 'advances',  label: 'Advances' },
+  { key: 'awards',    label: 'Awards' },
+  { key: 'subawards', label: 'Subawards' },
+  { key: 'workspace', label: 'Workspace', isNew: true },
+  { key: 'files',     label: 'Files',     isNew: true },
+  { key: 'guide',     label: 'Guide',     isTutorial: true },
 ]
+
+export function TopNav({ active, onJump, userName = 'Hermione Granger' }: {
+  active: TabKey;
+  onJump: (k: TabKey) => void;
+  userName?: string;
+}) {
+  return (
+    <header className="bg-sage-700 text-white shrink-0">
+      <div className="flex items-center px-6 py-2 border-b border-sage-900/30 gap-3">
+        <div className="text-[18px] font-bold tracking-wide">SAGE</div>
+        <div className="flex-1" />
+        <div className="flex items-center gap-2 text-[12px]">
+          <span>{userName}</span>
+          <div className="w-7 h-7 rounded-full bg-sage-600 flex items-center justify-center text-[11px] font-bold">
+            {userName.split(' ').map(n => n[0]).join('').slice(0,2)}
+          </div>
+        </div>
+      </div>
+      <div className="flex px-4 overflow-x-auto">
+        {TABS.map(t => {
+          const isActive = active === t.key
+          return (
+            <button key={t.key} onClick={() => onJump(t.key)}
+              className={`relative px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider transition whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${
+                isActive
+                  ? 'bg-page text-sage-700'
+                  : 'text-white/80 hover:text-white hover:bg-sage-900/30 cursor-pointer'
+              }`}>
+              {t.label}
+              {t.isNew && (
+                <span className={`absolute top-1 right-1 text-[7px] px-1 py-0 rounded-sm font-bold ${
+                  isActive ? 'bg-sage-700 text-white' : 'bg-amber-500 text-white'
+                }`}>NEW</span>
+              )}
+              {t.isTutorial && (
+                <span className={`absolute top-1 right-1 text-[9px] ${
+                  isActive ? 'text-sage-700' : 'text-amber-300'
+                }`}>?</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+    </header>
+  )
+}
+
+// Sub-tab strip used inside Awards (NoA · Reconciliation · ASR)
+export function SubTabs<K extends string>({ tabs, active, onChange }: {
+  tabs: { key: K; label: string; locked?: boolean }[];
+  active: K;
+  onChange: (k: K) => void;
+}) {
+  return (
+    <div className="flex border-b border-bdLt bg-card px-6 gap-1">
+      {tabs.map((t, i) => {
+        const isActive = active === t.key
+        return (
+          <button key={t.key}
+            onClick={() => !t.locked && onChange(t.key)}
+            disabled={t.locked}
+            className={`relative px-4 py-3 text-[12px] font-medium transition border-b-2 -mb-px focus:outline-none ${
+              isActive
+                ? 'border-sage-600 text-sage-700 font-semibold'
+                : t.locked
+                  ? 'border-transparent text-sub cursor-not-allowed'
+                  : 'border-transparent text-mute hover:text-ink'
+            }`}>
+            <span className="mr-2 text-sub">{i + 1}</span>
+            {t.label}
+            {t.locked && <span className="ml-2 text-[10px]">🔒</span>}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 export function Sidebar({ active, onJump, completed, collapsed }: { active: StepKey; onJump: (k: StepKey) => void; completed: Set<StepKey>; collapsed: boolean }) {
   if (collapsed) {
