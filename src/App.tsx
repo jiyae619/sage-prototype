@@ -27,6 +27,7 @@ export default function App() {
   const [noaUploaded, setNoaUploaded] = useState(false)
   const [reconciliationActive, setReconciliationActive] = useState(false)
   const [egc1Submitted, setEgc1Submitted] = useState(false)
+  const [openBudgetId, setOpenBudgetId] = useState<string | null>(null)
 
   function go(t: TabKey) {
     setTab(t)
@@ -53,6 +54,7 @@ export default function App() {
     reconciliationActive, setReconciliationActive,
     egc1Submitted, setEgc1Submitted,
     awardsStep, setAwardsStep,
+    openBudgetId, setOpenBudgetId,
   }
 
   return (

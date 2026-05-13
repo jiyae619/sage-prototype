@@ -132,6 +132,7 @@ export type Nav = {
   reconciliationActive: boolean; setReconciliationActive: (v: boolean) => void;
   egc1Submitted: boolean; setEgc1Submitted: (v: boolean) => void;
   awardsStep: AwardsStep; setAwardsStep: (s: AwardsStep) => void;
+  openBudgetId: string | null; setOpenBudgetId: (id: string | null) => void;
 }
 
 // =====================================================================
@@ -687,11 +688,16 @@ function SageAddIn({ row, allRows, pdfOpen, onClose, toast }: {
         {row.category === 'personnel' && row.id.startsWith('ra') && (
           <>
             <div>
-              <h3 className="text-[14px] font-semibold">Grad RA — {row.label || 'Unnamed'}</h3>
-              <select className="w-full mt-2 px-3 py-2 text-[12px] border border-bd rounded-md">
-                <option>Grad RA — Variable Rate, Sch 1</option>
-                <option>Grad RA — Fixed Rate, Sch 2</option>
+              <h3 className="text-[14px] font-semibold">{row.label || 'Grad RA'} — {row.cellRef}</h3>
+              <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mt-3 mb-1">Salary schedule</div>
+              <select className="w-full px-3 py-2 text-[12px] border border-bd rounded-md focus:outline-none focus:border-sage-500">
+                <option>Sch 1 — Doctoral RA (PhD)</option>
+                <option>Sch 1 — Master&apos;s RA</option>
+                <option>Sch 2 — Predoctoral Fellow</option>
+                <option>Sch 3 — Variable Rate</option>
+                <option>Sch 4 — Fixed Rate</option>
               </select>
+              <div className="text-[10px] text-mute mt-1">Schedule drives the monthly salary applied to this row.</div>
             </div>
             <Stat k="Monthly Salary" v={row.monthlySalary ? `$${row.monthlySalary.toLocaleString()} / month` : '—'} sub="Grad School, eff. 3/1/2024" confidence="high" source="UW Grad School rate table" />
             <Stat k="FTE / Period" v={`${row.effortPct || 0}% FTE × ${row.months || 0} months`} />
@@ -725,9 +731,28 @@ function SageAddIn({ row, allRows, pdfOpen, onClose, toast }: {
         {row.category === 'personnel' && !row.id.startsWith('ra') && (
           <>
             <h3 className="text-[14px] font-semibold">{row.label || 'PI'} — {row.cellRef}</h3>
-            <Stat k="Monthly Salary" v={row.monthlySalary ? `$${row.monthlySalary.toLocaleString()} / month` : '—'} sub="Workday salary feed" confidence="high" source="Workday" />
+
+            {/* Workday integration card */}
+            <div className="border border-[#0875E1]/30 bg-[#0875E1]/5 rounded-md p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-semibold" style={{ color: '#0875E1' }}>
+                  <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#0875E1' }} aria-hidden />
+                  Workday integration
+                </span>
+                <button onClick={() => toast('Salary refreshed from Workday HCM.')} className="text-[10px] underline" style={{ color: '#0875E1' }}>Refresh</button>
+              </div>
+              <div className="bg-white border border-bdLt rounded px-2.5 py-2 text-[11px] space-y-1">
+                <div className="flex justify-between"><span className="text-mute">Position</span><span className="text-ink font-medium">{row.role || 'Faculty'}</span></div>
+                <div className="flex justify-between"><span className="text-mute">Monthly salary</span><span className="text-ink font-semibold tabular-nums">{row.monthlySalary ? `$${row.monthlySalary.toLocaleString()}` : '—'}</span></div>
+                <div className="flex justify-between"><span className="text-mute">Pay group</span><span className="text-ink">12-month faculty</span></div>
+                <div className="flex justify-between"><span className="text-mute">Effective date</span><span className="text-ink">3/1/2024</span></div>
+              </div>
+              <p className="text-[10px] text-mute leading-relaxed">Last synced 8 min ago from Workday HCM. Salary auto-updates if Workday changes; the Workspace will surface a banner.</p>
+            </div>
+
             <Stat k="Effort × Months" v={`${row.effortPct || 0}% × ${row.months || 0} mo`} />
             <Stat k="Subtotal (computed)" v={`$${sub.toLocaleString()}`} confidence="high" source="Live formula" />
+
             <div className="bg-purple-100/40 border border-purple-700/30 rounded-md p-3 text-[11px] text-purple-700 leading-relaxed">
               <b>✦ NIH Executive Level II salary cap</b> — current cap $221,900/yr ($18,492/mo). If salary exceeds the cap, only the cap is chargeable.
             </div>
@@ -1315,93 +1340,316 @@ function ReconcileSubStage({ go, toast, rows, setIssues, reconciliationActive, s
   )
 }
 
-function AsrSubStage({ go, toast, rows, issues, reconciliationActive }: Nav) {
+function AsrSubStage({ go, toast, rows, issues, reconciliationActive, setOpenBudgetId }: Nav) {
   const totals = totalsOf(rows)
   const NOA_TOTAL = 267006
   const hasMismatch = issues.length > 0
   const blockSubmit = hasMismatch || !reconciliationActive
   const [piSfiDone, setPiSfiDone] = useState(false)
+  const [section, setSection] = useState<'summary'|'approvals'|'access'|'history'>('summary')
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    general: true, budget: true, sfi: true, attachments: true,
+  })
+  function toggleSection(k: string) {
+    setOpenSections(s => ({ ...s, [k]: !s[k] }))
+  }
 
   return (
-    <div className="flex-1 overflow-auto p-8 max-w-[1200px] w-full space-y-5">
-      <div>
-        <h2 className="text-[22px] font-semibold">Award Setup Request (ASR)</h2>
-        <p className="text-[13px] text-mute mt-1">Review the field mapping below, then submit the ASR to route to Department › OSP › GCA.</p>
-      </div>
-
-      {hasMismatch ? (
-        <ImportBlockerBanner
-          count={issues.length}
-          summary="F&A rounding difference of $41. Apply the suggested fix in the Workspace or adjust manually."
-          onApplyFix={() => { toast('Returning to Workspace — open the right panel to apply the fix.'); go('workspace') }}
-        />
-      ) : (
-        <div className="bg-sage-50 border border-sage-500 rounded-md px-4 py-3 flex items-center gap-3 text-[13px] text-sage-700 font-medium">
-          <span>✓</span>
-          <span>Budget balanced — ${NOA_TOTAL.toLocaleString()} matches the awarded total. Ready to import.</span>
-        </div>
-      )}
-
-      <div className="bg-white border border-bdLt rounded-lg overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-bdLt flex items-center justify-between">
-          <h3 className="text-[13px] font-semibold">Import mapping — Workspace rows → SAGE Budget FAS object codes</h3>
-          <span className="text-[11px] text-sub">Period 1 shown · {rows.filter(r => computeSubtotal(r, rows) > 0).length} lines</span>
-        </div>
-        <div className="bg-surf2 border-b border-bdLt grid grid-cols-[2fr_1fr_1fr_0.6fr] px-5 py-3 text-[10px] text-sub uppercase tracking-widest font-semibold">
-          <span>Workspace row</span><span>Amount</span><span>SAGE object code</span><span>Status</span>
-        </div>
-        {rows.filter(r => computeSubtotal(r, rows) > 0).map((r, i) => {
-          const sub = computeSubtotal(r, rows)
-          const code =
-            r.category === 'personnel' ? '01-10 Faculty' :
-            r.category === 'fringe' ? '01-10 Fringe' :
-            r.category === 'tuition' ? '08-05 Tuition' :
-            r.category === 'travel' ? '04-00 Travel' :
-            r.category === 'supplies' || r.category === 'equipment' ? '05-00 Supplies' :
-            'F&A'
-          const mismatch = hasMismatch && r.category === 'fa'
-          return (
-            <div key={i} className={`grid grid-cols-[2fr_1fr_1fr_0.6fr] px-5 py-3 text-[12px] border-b border-bdLt items-center ${mismatch ? 'bg-amber-50' : ''}`}>
-              <span>{r.label || r.role || r.category}</span>
-              <span className={`font-semibold tabular-nums ${mismatch ? 'text-amber-700' : ''}`}>${(mismatch ? sub - 41 : sub).toLocaleString()}</span>
-              <span>{code}</span>
-              {mismatch ? <Pill tone="amber">Mismatch</Pill> : <span className="text-sage-700 font-medium">✓ Mapped</span>}
-            </div>
-          )
-        })}
-        <div className={`grid grid-cols-[2fr_1fr_1fr_0.6fr] px-5 py-3.5 text-[13px] items-center ${hasMismatch ? 'bg-amber-50 border-t-2 border-amber-bd' : 'bg-surf2'}`}>
-          <span className="font-semibold">Total</span>
-          <span className={`font-bold tabular-nums ${hasMismatch ? 'text-amber-700' : 'text-sage-700'}`}>${(hasMismatch ? totals.total - 41 : totals.total).toLocaleString()}</span>
-          <span className="text-[11px]">
-            {hasMismatch
-              ? <span className="px-2 py-1 rounded bg-amber-bd/40 border border-amber-bd text-amber-700 font-semibold">$41 below NoA</span>
-              : <span className="text-sage-700 font-medium">✓ Matches awarded total</span>}
-          </span>
-          <span></span>
-        </div>
-      </div>
-
-      <div className="bg-white border border-bdLt rounded-lg overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-bdLt"><h3 className="text-[13px] font-semibold">Pre-submission checklist</h3></div>
-        <Check icon={hasMismatch ? '!' : '✓'} tone={hasMismatch ? 'amber' : 'green'} bold={hasMismatch ? 'Budget mismatch unresolved' : 'Budget linked and balanced'} mute={hasMismatch ? '$41 off. Apply fix in Workspace.' : `$${NOA_TOTAL.toLocaleString()} matches awarded total`} />
-        <Check icon="✓" tone="green" bold="Notice of Award attached" />
-        <Check icon="✓" tone="green" bold="Workspace + eGC1 complete" />
-        <Check icon={piSfiDone ? '✓' : '!'} tone={piSfiDone ? 'green' : 'amber'} bold="PI SFI disclosure" mute={piSfiDone ? 'Completed by PI 2 min ago.' : 'Awaiting PI action. Cannot be completed by GM.'} />
-      </div>
-
-      <StickyCta hint="Award Setup Request · Final stage">
-        <Button variant="ghost" onClick={() => go('workspace')}>← Back to Workspace</Button>
+    <div className="flex-1 flex flex-col overflow-hidden bg-page">
+      {/* ASR header bar */}
+      <div className="bg-card border-b border-bdLt px-6 py-3 flex items-center gap-3">
+        <button onClick={() => toast('Back to Awards list.')} className="text-mute hover:text-ink text-[16px] leading-none">←</button>
+        <h2 className="text-[18px] font-semibold">New Award Setup Request <span className="text-mute font-normal">(ASR34521)</span></h2>
         <div className="flex-1" />
-        {hasMismatch
-          ? <Button variant="primary" onClick={() => go('workspace')}>Apply fix in Workspace</Button>
-          : <Button variant="secondary" onClick={() => { setTimeout(() => setPiSfiDone(true), 600); toast('SFI reminder sent to Dr. Potter.') }}>
-              Send SFI reminder to PI
-            </Button>}
-        <Button variant={blockSubmit ? 'disabled' : 'primary'}
-          onClick={() => !blockSubmit && toast('ASR submitted. Routing to Department › OSP › GCA.')}>
-          {hasMismatch ? 'Resolve mismatch first' : piSfiDone ? 'Submit ASR' : 'Submit ASR — waiting for PI SFI'}
-        </Button>
-      </StickyCta>
+        <div className="text-[10px] text-mute text-right leading-tight">
+          Request Applic...<br/>
+          <button onClick={() => go('egc1')} className="text-sage-700 underline">A224134 ↗</button>
+        </div>
+        <span className="px-2.5 py-1 rounded-full bg-amber-50 border border-amber-bd text-amber-700 text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap">OSP Assigned</span>
+      </div>
+
+      {/* Holds banner */}
+      <div className="bg-blue-50 border-b border-blue-200 px-6 py-2 text-[12px] text-blue-700 flex items-center gap-2"
+        style={{ background: '#EBF2FB', borderColor: '#C2D6EE', color: '#1F4F8C' }}>
+        <span>ℹ</span>
+        <span>Holds or compliance checks are in process. View the Comments &amp; History section for more information.</span>
+      </div>
+
+      {/* Body: left rail + content */}
+      <div className="flex-1 flex overflow-hidden">
+        <aside className="w-60 bg-card border-r border-bdLt py-3 shrink-0 overflow-auto">
+          {[
+            { key: 'summary',   label: 'Request Summary',    icon: '☑' },
+            { key: 'approvals', label: 'Approvals',          icon: 'ⓘ' },
+            { key: 'access',    label: 'Access & Roles',     icon: '🔒' },
+            { key: 'history',   label: 'Comments & History', icon: '🕐' },
+          ].map(s => (
+            <button key={s.key} onClick={() => setSection(s.key as typeof section)}
+              className={`w-full text-left px-5 py-3 text-[13px] flex items-center gap-3 transition ${
+                section === s.key
+                  ? 'bg-sage-50 text-sage-700 font-semibold border-l-[3px] border-sage-600'
+                  : 'text-ink hover:bg-surf2 border-l-[3px] border-transparent'
+              }`}>
+              <span className="text-[13px] w-4">{s.icon}</span>
+              {s.label}
+            </button>
+          ))}
+        </aside>
+
+        <div className="flex-1 overflow-auto bg-page">
+          {section !== 'summary' && (
+            <div className="p-10 text-mute text-[13px]">
+              <h3 className="text-[15px] font-semibold text-ink mb-1">{
+                section === 'approvals' ? 'Approvals' :
+                section === 'access' ? 'Access & Roles' :
+                'Comments & History'
+              }</h3>
+              <p>This section is not part of the prototype walkthrough — open <b>Request Summary</b> to see the full ASR layout.</p>
+            </div>
+          )}
+
+          {section === 'summary' && (
+            <div className="px-8 py-6 space-y-3 max-w-none">
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-[18px] font-semibold">Request Summary</h3>
+                <span className="text-sub" title="Help">ⓘ</span>
+              </div>
+
+              {/* General Information */}
+              <CollapsibleSection title="General Information" open={openSections.general} onToggle={() => toggleSection('general')}>
+                <h4 className="text-[14px] font-semibold mb-3">Award Overview</h4>
+                <div className="grid grid-cols-3 gap-x-8 gap-y-4 mb-6">
+                  <Field label="Short Title" value="Eye Conditions Evaluation" />
+                  <Field label="Full Title" value="Characterization of eye condition treatments in clinical-trial planning, leveraging multi-modal imaging" wide />
+                </div>
+                <div className="grid grid-cols-3 gap-x-8 gap-y-4 mb-6">
+                  <Field label="Period 1 Start Date" value="3/1/2024" />
+                  <Field label="Authorized Period End Date" value="2/28/2025" />
+                  <Field label="Estimated Award End Date" value="2/28/2026" />
+                </div>
+                <div className="grid grid-cols-3 gap-x-8 gap-y-4 mb-6">
+                  <Field label="Sponsor Total for Spending Period" value={`$${NOA_TOTAL.toLocaleString()}`} />
+                  <Field label="Clinical Trial Phase" value="Phase 0 (R34 planning)" />
+                  <Field label="Project Type" value="Grant" />
+                </div>
+                <div className="grid grid-cols-3 gap-x-8 gap-y-4 mb-6">
+                  <Field label="Sponsored Program Activity Type" value="OR: Research: Basic" />
+                  <Field label="Sponsor Award Issue Date" value="2/21/2024" />
+                  <Field label="Sponsor Award Number" value="1R34EY000000-01" />
+                </div>
+
+                <h4 className="text-[14px] font-semibold mb-3 mt-8">Sponsor Details</h4>
+                <div className="grid grid-cols-3 gap-x-8 gap-y-4 mb-6">
+                  <Field label="Sponsor" value="National Institutes of Health (NEI)" />
+                  <Field label="Sponsor Type" value="Federal" />
+                  <Field label="Bill to Sponsor" value="National Institutes of Health" />
+                </div>
+                <div className="grid grid-cols-3 gap-x-8 gap-y-4 mb-3">
+                  <Field label="Deadline for Accepting Award Date" value="3/1/2024" />
+                </div>
+                <div className="mb-6">
+                  <div className="text-[11px] text-mute mb-1">Instructions for where date source can be found in Notice of Award</div>
+                  <div className="text-[13px] text-ink">Funding for Spring quarter 2024 hire of Graduate Research Assistants is contingent upon expedited processing of the award.</div>
+                </div>
+
+                <h4 className="text-[14px] font-semibold mb-3 mt-8">PI &amp; Department</h4>
+                <div className="grid grid-cols-3 gap-x-8 gap-y-4 mb-2">
+                  <Field label="Cost Center" value="CC100742 | School of Medicine — Ophthalmology Research" wide />
+                  <Field label="Principal Investigator" value="Harry Potter" />
+                </div>
+                <SectionFooter onClose={() => toggleSection('general')} onPrev={() => toast('First section.')} onNext={() => { toggleSection('general'); document.querySelector('[data-section="budget"]')?.scrollIntoView({ behavior: 'smooth' }) }} />
+              </CollapsibleSection>
+
+              {/* Budget & Award Lines */}
+              <CollapsibleSection title="Budget & Award Lines" open={openSections.budget} onToggle={() => toggleSection('budget')}>
+                <div data-section="budget" />
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <p className="text-[12px] text-mute leading-relaxed flex-1">
+                    📄 Characterization of eye condition treatments in clinical-trial planning, leveraging multi-modal imaging (B158116)
+                  </p>
+                  <button onClick={() => { setOpenBudgetId('B158116'); go('budgets') }}
+                    className="px-3 py-1.5 rounded border border-sage-600 text-sage-700 text-[11px] font-semibold hover:bg-sage-50 whitespace-nowrap inline-flex items-center gap-1.5">
+                    Open Budget <span aria-hidden>↗</span>
+                  </button>
+                </div>
+                <div className="flex items-center gap-4 mb-3">
+                  <button className="text-[11px] text-sage-700 underline inline-flex items-center gap-1">+ Expand Budget</button>
+                  <button className="text-[11px] text-sage-700 underline inline-flex items-center gap-1">− Collapse Budget</button>
+                </div>
+                <div className="text-[11px] text-sage-700 underline mb-3">Customize Details View ⚙</div>
+                <div className="flex gap-1 border-b border-bdLt mb-4 text-[11px]">
+                  {['All Periods', 'Period 1', 'Period 2'].map((p, i) => (
+                    <span key={p} className={`px-3 py-2 ${i === 0 ? 'border-b-2 border-sage-600 text-sage-700 font-semibold' : 'text-mute cursor-pointer'}`}>{p}</span>
+                  ))}
+                </div>
+                <div className="text-[12px] text-ink mb-3">All Periods (3/1/2024 – 2/28/2026)</div>
+                <div className="border-t border-b border-bdLt">
+                  <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr_0.6fr_1fr] text-[10px] text-sub uppercase tracking-wider font-semibold px-4 py-2 border-b border-bdLt bg-page">
+                    <span>Worksheet / Award Line</span>
+                    <span className="text-right">Total Direct Costs</span>
+                    <span className="text-right">Costs Subject to F&amp;A</span>
+                    <span className="text-right">Total F&amp;A</span>
+                    <span className="text-right">Fees</span>
+                    <span className="text-right">Total Costs</span>
+                  </div>
+                  <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr_0.6fr_1fr] text-[12px] px-4 py-3 border-b border-bdLt bg-card items-center">
+                    <span className="font-medium inline-flex items-center gap-1"><span className="text-sage-700">▸</span> NIH R34 EYE — POTTER | W104872</span>
+                    <span className="text-right tabular-nums">${totals.directCosts.toLocaleString()}</span>
+                    <span className="text-right tabular-nums">${totals.mtdcBase.toLocaleString()}</span>
+                    <span className="text-right tabular-nums">${totals.fa.toLocaleString()}</span>
+                    <span className="text-right tabular-nums">$0</span>
+                    <span className="text-right font-semibold tabular-nums">${totals.total.toLocaleString()}</span>
+                  </div>
+                  <div className="px-4 py-3 bg-page text-[11px] text-mute border-b border-bdLt">
+                    <div className="grid grid-cols-2 gap-y-1 gap-x-12 max-w-[600px]">
+                      <span><b className="text-ink">F&amp;A Rate:</b> 57.5%</span>
+                      <span><b className="text-ink">Base Type:</b> Modified Total Direct Costs (MTDC)</span>
+                      <span><b className="text-ink">Location:</b> On Campus</span>
+                      <span><b className="text-ink">Sponsored Program Activity Type:</b> OR: Research: Basic</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr_0.6fr_1fr] text-[12px] px-4 py-3 border-b border-bdLt bg-card items-center">
+                    <span className="font-medium">Budget Total</span>
+                    <span className="text-right tabular-nums">${totals.directCosts.toLocaleString()}</span>
+                    <span className="text-right tabular-nums">${totals.mtdcBase.toLocaleString()}</span>
+                    <span className="text-right tabular-nums">${totals.fa.toLocaleString()}</span>
+                    <span className="text-right tabular-nums">$0</span>
+                    <span className="text-right font-semibold tabular-nums">${totals.total.toLocaleString()}</span>
+                  </div>
+                  <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr_0.6fr_1fr] text-[12px] px-4 py-3 border-b border-bdLt bg-card items-center">
+                    <span className="font-medium">Sponsor Total for Spending Period</span>
+                    <span className="text-right text-mute">—</span><span className="text-right text-mute">—</span>
+                    <span className="text-right text-mute">—</span><span className="text-right text-mute">—</span>
+                    <span className="text-right font-semibold tabular-nums">${NOA_TOTAL.toLocaleString()}</span>
+                  </div>
+                  <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr_0.6fr_1fr] text-[12px] px-4 py-3 bg-card items-center">
+                    <span className="font-medium">Difference</span>
+                    <span className="text-right text-mute">—</span><span className="text-right text-mute">—</span>
+                    <span className="text-right text-mute">—</span><span className="text-right text-mute">—</span>
+                    <span className={`text-right font-semibold tabular-nums ${hasMismatch ? 'text-amber-700' : 'text-sage-700'}`}>
+                      ${(NOA_TOTAL - (hasMismatch ? totals.total - 41 : totals.total)).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+                <SectionFooter onClose={() => toggleSection('budget')} onPrev={() => toast('Previous section.')} onNext={() => toggleSection('budget')} />
+              </CollapsibleSection>
+
+              {/* SFI & FCOI */}
+              <CollapsibleSection title="SFI & FCOI" open={openSections.sfi} onToggle={() => toggleSection('sfi')}>
+                <div className="border border-bdLt rounded overflow-hidden">
+                  <div className="grid grid-cols-[1fr_1fr_1fr] bg-page border-b border-bdLt px-4 py-2.5 text-[11px] text-mute font-semibold">
+                    <span>Investigator</span><span>Role</span><span>SFI Disclosure Submission Status</span>
+                  </div>
+                  {[
+                    { name: 'Harry Potter',       role: 'Contact Principal Investigator', done: piSfiDone },
+                    { name: 'Alastor Moody',      role: 'Multi-PI',                       done: true },
+                    { name: 'Remus Lupin',        role: 'Multi-PI',                       done: true },
+                    { name: 'Minerva McGonagall', role: 'Multi-PI',                       done: true },
+                  ].map(p => (
+                    <div key={p.name} className="grid grid-cols-[1fr_1fr_1fr] px-4 py-3 text-[13px] border-b border-bdLt last:border-b-0 items-center">
+                      <span>{p.name}</span>
+                      <span>{p.role}</span>
+                      <span className={`inline-flex items-center gap-1.5 ${p.done ? 'text-sage-700' : 'text-amber-700'}`}>
+                        <span>{p.done ? '✓' : '⚠'}</span>
+                        {p.done ? 'Up-to-date' : 'Disclosure required'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-mute mt-3">You can view all personnel on this request&apos;s <a className="text-sage-700 underline cursor-pointer">parent application ↗</a></p>
+                <SectionFooter onClose={() => toggleSection('sfi')} onPrev={() => toggleSection('sfi')} onNext={() => toggleSection('sfi')} />
+              </CollapsibleSection>
+
+              {/* Supporting Attachments */}
+              <CollapsibleSection title="Supporting Attachments" open={openSections.attachments} onToggle={() => toggleSection('attachments')}>
+                <div className="border border-bdLt rounded overflow-hidden">
+                  <div className="grid grid-cols-[1.3fr_1fr_1.2fr_0.8fr] bg-page border-b border-bdLt px-4 py-2.5 text-[11px] text-mute font-semibold">
+                    <span>File Name</span><span>Type</span><span>Description</span><span>Attached On</span>
+                  </div>
+                  {[
+                    { name: 'NIH-Grants-Process-Primer-Sample-NOA.pdf', type: '*Agreement Document', desc: 'Notice of Award', date: '2/22/24, 9:14 AM' },
+                    { name: 'Equipment_Invoice_v1.pdf',                  type: '*Internal (UW) Document', desc: 'Heidelberg OCT module quote', date: '5/03/24, 1:08 PM' },
+                    { name: 'eGC1_A224134_v1.pdf',                       type: '*Internal (UW) Document', desc: 'eGC1 submission packet', date: '1/18/24, 4:22 PM' },
+                    { name: 'ARVO_Conference_Quote.pdf',                 type: '*Internal (UW) Document', desc: 'Travel quote — ARVO 2024', date: '5/09/24, 11:31 AM' },
+                    { name: 'SFI FCOI approval.msg',                     type: '*Internal (UW) Document', desc: 'SFI FCOI review', date: '5/07/24, 8:55 AM' },
+                  ].map(f => (
+                    <div key={f.name} className="grid grid-cols-[1.3fr_1fr_1.2fr_0.8fr] px-4 py-3 text-[13px] border-b border-bdLt last:border-b-0 items-center">
+                      <a className="text-sage-700 underline truncate cursor-pointer">▾ {f.name}</a>
+                      <span className="text-mute">{f.type}</span>
+                      <span>{f.desc}</span>
+                      <span className="text-mute">{f.date}</span>
+                    </div>
+                  ))}
+                </div>
+                <SectionFooter onClose={() => toggleSection('attachments')} onPrev={() => toggleSection('attachments')} onNext={() => toast('Last section.')} />
+              </CollapsibleSection>
+
+              {/* Submission ctas (prototype-only summary) */}
+              <div className="bg-white border border-bdLt rounded-lg px-5 py-4 flex items-center gap-3 mt-6">
+                {hasMismatch ? (
+                  <span className="text-[12px] text-amber-700"><b>⚠ Budget mismatch unresolved</b> — $41 off. Apply fix in Workspace before submitting ASR.</span>
+                ) : (
+                  <span className="text-[12px] text-sage-700"><b>✓ Budget linked and balanced</b> — ${NOA_TOTAL.toLocaleString()} matches awarded total.</span>
+                )}
+                <div className="flex-1" />
+                <Button variant="ghost" onClick={() => go('workspace')}>← Back to Workspace</Button>
+                {hasMismatch ? (
+                  <Button variant="primary" onClick={() => go('workspace')}>Apply fix in Workspace</Button>
+                ) : (
+                  <Button variant="secondary" onClick={() => { setTimeout(() => setPiSfiDone(true), 600); toast('SFI reminder sent to Dr. Potter.') }}>
+                    Send SFI reminder
+                  </Button>
+                )}
+                <Button variant={blockSubmit ? 'disabled' : 'primary'}
+                  onClick={() => !blockSubmit && toast('ASR submitted. Routing to Department › OSP › GCA.')}>
+                  {hasMismatch ? 'Resolve mismatch first' : piSfiDone ? 'Submit ASR' : 'Submit — awaiting PI SFI'}
+                </Button>
+              </div>
+
+              {hasMismatch && (
+                <div className="mt-4">
+                  <ImportBlockerBanner
+                    count={issues.length}
+                    summary="F&A rounding difference of $41. Apply the suggested fix in the Workspace or adjust manually."
+                    onApplyFix={() => { toast('Returning to Workspace — open the right panel to apply the fix.'); go('workspace') }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CollapsibleSection({ title, open, onToggle, children }: { title: string; open: boolean; onToggle: () => void; children: React.ReactNode }) {
+  return (
+    <div className="bg-card border border-bdLt rounded">
+      <button onClick={onToggle} className="w-full px-5 py-3 flex items-center gap-2 text-left border-b border-bdLt hover:bg-surf2/40 transition">
+        <span className="text-sage-700">{open ? '▾' : '▸'}</span>
+        <span className="text-[14px] font-semibold">{title}</span>
+      </button>
+      {open && <div className="px-5 py-5">{children}</div>}
+    </div>
+  )
+}
+
+function Field({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <div className={wide ? 'col-span-2' : ''}>
+      <div className="text-[11px] text-mute mb-1">{label}</div>
+      <div className="text-[13px] text-ink">{value}</div>
+    </div>
+  )
+}
+
+function SectionFooter({ onClose, onPrev, onNext }: { onClose: () => void; onPrev: () => void; onNext: () => void }) {
+  return (
+    <div className="flex items-center justify-end gap-5 pt-4 mt-4 border-t border-bdLt text-[12px]">
+      <button onClick={onClose} className="text-sage-700 underline">Close</button>
+      <button onClick={onPrev}  className="text-sage-700 underline">Previous Section</button>
+      <button onClick={onNext}  className="text-sage-700 underline">Next Section</button>
     </div>
   )
 }
@@ -1412,17 +1660,6 @@ function Row({ k, v, tone, highlight, small }: { k: string; v: string; tone?: 'r
     <div className="flex items-center justify-between py-2 text-[13px]">
       <span className="text-mute">{k}</span>
       <span className={`font-semibold ${color} ${small ? 'text-[12px] text-right max-w-[260px]' : ''}`}>{v}</span>
-    </div>
-  )
-}
-
-function Check({ icon, tone, bold, mute }: { icon: string; tone: 'green'|'amber'|'gray'; bold: string; mute?: string }) {
-  const dotBg = tone === 'green' ? 'bg-sage-600' : tone === 'amber' ? 'bg-amber-700' : 'bg-[#D9D5C8]'
-  return (
-    <div className="px-5 py-3 border-b border-bdLt last:border-b-0 flex items-center gap-3">
-      <span className={`w-5 h-5 rounded-full ${dotBg} text-white text-[11px] font-bold flex items-center justify-center`}>{icon}</span>
-      <span className="text-[13px] font-medium">{bold}</span>
-      {mute && <span className="text-[13px] text-mute">— {mute}</span>}
     </div>
   )
 }
@@ -1494,25 +1731,31 @@ export function FilesScreen({ toast, noaUploaded, egc1Submitted }: Nav) {
 // SCREEN — Budgets (list view)
 // =====================================================================
 
-export function BudgetsScreen({ go }: Nav) {
+export function BudgetsScreen(props: Nav) {
+  const { go, toast, openBudgetId, setOpenBudgetId, rows: wsRows } = props
+  if (openBudgetId === 'B158116') return <BudgetDetailView {...props} />
+
   const rows = [
-    { id: 'B158116', title: 'Eye Conditions Evaluation', sponsor: 'NIH', pi: 'Harry Potter', status: 'Active', total: '$267,006' },
-    { id: 'B161463', title: 'NASA Linking Lakes', sponsor: 'NASA', pi: 'Faisal Hossain', status: 'Closed', total: '$298,500' },
-    { id: 'B167902', title: 'Glaucoma Cohort Study', sponsor: 'NIH', pi: 'Remus Lupin', status: 'Draft', total: '—' },
+    { id: 'B158116', title: 'Eye Conditions Evaluation', sponsor: 'NIH',  pi: 'Harry Potter',    status: 'Active', total: `$${totalsOf(wsRows).total.toLocaleString()}` },
+    { id: 'B161463', title: 'NASA Linking Lakes',        sponsor: 'NASA', pi: 'Faisal Hossain',  status: 'Closed', total: '$298,500' },
+    { id: 'B167902', title: 'Glaucoma Cohort Study',     sponsor: 'NIH',  pi: 'Remus Lupin',     status: 'Draft',  total: '—' },
   ]
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-page">
       <Breadcrumb trail={[{ label: 'Budgets' }, { label: 'My budgets' }]} />
       <div className="p-8 max-w-[1100px] w-full">
         <h2 className="text-[22px] font-semibold mb-1">Budgets</h2>
-        <p className="text-[13px] text-mute mb-5">Open the Workspace to draft, refine, or reconcile any budget.</p>
+        <p className="text-[13px] text-mute mb-5">Click <b>B158116 Eye Conditions Evaluation</b> to open the budget summary auto-populated from Workspace.</p>
         <div className="bg-card border border-bdLt rounded-lg overflow-hidden">
           <div className="bg-surf2 border-b border-bdLt grid grid-cols-[100px_1.5fr_100px_1fr_100px_120px] px-5 py-3 text-[10px] text-sub uppercase tracking-widest font-semibold">
             <span>ID</span><span>Title</span><span>Sponsor</span><span>PI</span><span>Status</span><span className="text-right">Total</span>
           </div>
           {rows.map(r => (
-            <div key={r.id} onClick={() => go('workspace')}
-              className="grid grid-cols-[100px_1.5fr_100px_1fr_100px_120px] px-5 py-3 text-[12px] border-b border-bdLt last:border-b-0 items-center hover:bg-surf2/40 cursor-pointer">
+            <div key={r.id}
+              onClick={() => r.id === 'B158116' ? setOpenBudgetId(r.id) : toast(`${r.id} is read-only in this prototype.`)}
+              className={`grid grid-cols-[100px_1.5fr_100px_1fr_100px_120px] px-5 py-3 text-[12px] border-b border-bdLt last:border-b-0 items-center cursor-pointer transition ${
+                r.id === 'B158116' ? 'hover:bg-sage-50' : 'hover:bg-surf2/40'
+              }`}>
               <span className="font-mono text-sage-700">{r.id}</span>
               <span className="font-medium">{r.title}</span>
               <span>{r.sponsor}</span>
@@ -1522,7 +1765,296 @@ export function BudgetsScreen({ go }: Nav) {
             </div>
           ))}
         </div>
+        <div className="mt-3 flex items-center justify-end">
+          <button onClick={() => go('workspace')} className="text-[12px] text-sage-700 underline">Or open the Workspace directly →</button>
+        </div>
       </div>
+    </div>
+  )
+}
+
+// Budget detail — auto-populated from Workspace rows (image #8 layout)
+function BudgetDetailView(props: Nav) {
+  const { go, toast, rows, setOpenBudgetId, reconciliationActive } = props
+  const totals = totalsOf(rows)
+  const [section, setSection] = useState<'summary'|'worksheet'>('summary')
+
+  // Map workspace rows to SAGE Budget summary groups
+  const piRows = rows.filter(r => r.category === 'personnel' && !r.id.startsWith('ra'))
+  const raRows = rows.filter(r => r.category === 'personnel' && r.id.startsWith('ra'))
+  const fringeRow = rows.find(r => r.category === 'fringe')
+  const piSalaryTotal = piRows.reduce((s, r) => s + computeSubtotal(r, rows), 0)
+  const raSalaryTotal = raRows.reduce((s, r) => s + computeSubtotal(r, rows), 0)
+  const fringeTotal = fringeRow ? computeSubtotal(fringeRow, rows) : 0
+  // Distribute fringe proportionally between PI and RA
+  const totalSalary = piSalaryTotal + raSalaryTotal
+  const piFringe = totalSalary > 0 ? Math.round(fringeTotal * piSalaryTotal / totalSalary) : 0
+  const raFringe = fringeTotal - piFringe
+  const salaryGrandTotal = totalSalary
+  const benefitsGrandTotal = fringeTotal
+
+  const suppliesTotal = rows.filter(r => r.category === 'supplies' || r.category === 'equipment').reduce((s, r) => s + computeSubtotal(r, rows), 0)
+  const tuitionTotal = rows.filter(r => r.category === 'tuition').reduce((s, r) => s + computeSubtotal(r, rows), 0)
+  const travelTotal = rows.filter(r => r.category === 'travel').reduce((s, r) => s + computeSubtotal(r, rows), 0)
+  const otherCostsTotal = suppliesTotal + tuitionTotal + travelTotal
+
+  const period = '3/1/2024–2/28/2025'
+
+  const [piExpanded, setPiExpanded] = useState(true)
+  const [raExpanded, setRaExpanded] = useState(false)
+  const [tdcExpanded, setTdcExpanded] = useState(false)
+  const [faExpanded, setFaExpanded] = useState(false)
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden bg-page">
+      {/* Title header */}
+      <div className="bg-card border-b border-bdLt px-6 py-3 flex items-center gap-3">
+        <button onClick={() => setOpenBudgetId(null)} className="text-mute hover:text-ink text-[16px] leading-none">←</button>
+        <h2 className="text-[18px] font-semibold">A224134 Eye Conditions Evaluation <span className="text-mute font-normal">(B158116)</span></h2>
+        <span className="text-sub" title="Help">ⓘ</span>
+        <div className="flex-1" />
+        <div className="text-[10px] text-mute text-right leading-tight">Total Project Costs<br/><span className="text-ink font-semibold text-[13px] tabular-nums">${totals.total.toLocaleString()}</span></div>
+        <div className="text-[10px] text-mute text-right leading-tight ml-4">Total Direct Costs<br/><span className="text-ink font-semibold text-[13px] tabular-nums">${totals.directCosts.toLocaleString()}</span></div>
+        <div className="text-[10px] text-mute text-right leading-tight ml-4">Facilities &amp; Adm<br/><span className="text-ink font-semibold text-[13px] tabular-nums">${totals.fa.toLocaleString()}</span></div>
+        <button onClick={() => go('egc1')} className="ml-4 text-sage-700 underline text-[12px]">A224134 ↗</button>
+      </div>
+
+      {/* AI auto-populate banner */}
+      <div className="bg-purple-100/60 border-b border-purple-700/30 px-6 py-2.5 flex items-center gap-3 text-[12px] text-purple-700">
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-purple-700 text-white text-[10px] font-bold uppercase tracking-widest">
+          <span aria-hidden>✦</span> AI
+        </span>
+        <span className="font-medium">Auto-populated from Workspace formulas.</span>
+        <span className="text-mute">PI salaries from Workday · grad salaries &amp; tuition from UW Grad School + OPB · F&amp;A from rate agreement.</span>
+        <div className="flex-1" />
+        <button onClick={() => go('workspace')} className="text-[11px] underline">Edit in Workspace ↗</button>
+      </div>
+
+      {/* Snapshot warning (mirrors Image #8) */}
+      <div className="bg-amber-50 border-b border-amber-bd px-6 py-2 text-[12px] text-amber-700 flex items-center gap-2">
+        <span>⚠</span>
+        <span><b>Snapshot from {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}, 8:43 AM</b> | Snapshots can&apos;t be edited, create a copy of this snapshot to make edits.</span>
+      </div>
+
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left rail */}
+        <aside className="w-60 bg-card border-r border-bdLt py-3 flex flex-col shrink-0">
+          <button onClick={() => setSection('summary')}
+            className={`text-left px-5 py-3 text-[13px] flex items-center gap-3 ${
+              section === 'summary' ? 'bg-sage-50 text-sage-700 font-semibold border-l-[3px] border-sage-600' : 'text-ink hover:bg-surf2 border-l-[3px] border-transparent'
+            }`}>
+            <span>☑</span> Summary (All Worksheets)
+          </button>
+          <button onClick={() => setSection('worksheet')}
+            className={`text-left px-5 py-3 text-[13px] flex items-center gap-3 ${
+              section === 'worksheet' ? 'bg-sage-50 text-sage-700 font-semibold border-l-[3px] border-sage-600' : 'text-ink hover:bg-surf2 border-l-[3px] border-transparent'
+            }`}>
+            <span>☆</span> Eye Conditions Evaluation
+          </button>
+          <div className="flex-1" />
+          <button onClick={() => toast('Budget Settings opens here in real SAGE.')}
+            className="text-left px-5 py-3 text-[13px] flex items-center gap-3 text-ink hover:bg-surf2 border-t border-bdLt">
+            <span>⚙</span> Budget Settings
+          </button>
+        </aside>
+
+        {/* Main */}
+        <div className="flex-1 overflow-auto">
+          {section === 'worksheet' && (
+            <div className="p-10 text-mute text-[13px]">
+              <h3 className="text-[15px] font-semibold text-ink mb-1">Eye Conditions Evaluation worksheet</h3>
+              <p>Worksheet detail is rendered inside the <b>Workspace</b> tab. <button onClick={() => go('workspace')} className="text-sage-700 underline">Open Workspace ↗</button></p>
+            </div>
+          )}
+
+          {section === 'summary' && (
+            <div className="px-8 py-6 space-y-6">
+              <div className="flex items-center gap-2">
+                <h3 className="text-[18px] font-semibold">Budget Summary</h3>
+                <span className="text-sub" title="Help">ⓘ</span>
+              </div>
+
+              {/* Salary and Benefit Costs */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-[15px] font-semibold">Salary and Benefit Costs</h4>
+                    <span className="text-sub" title="Help">ⓘ</span>
+                    <span className="ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 text-[9px] font-bold">✦ AI</span>
+                  </div>
+                  <button className="text-[11px] text-sage-700 border border-bdLt rounded px-2 py-1">Displaying 2 of 6 fields ▾</button>
+                </div>
+                <div className="bg-card border border-bdLt rounded overflow-hidden">
+                  <div className="grid grid-cols-[1.6fr_120px_1fr_1fr] bg-page border-b border-bdLt px-5 py-2.5 text-[11px] text-mute font-semibold">
+                    <span>Name</span>
+                    <span></span>
+                    <span className="text-right">Period 1<br/><span className="font-normal text-[10px]">({period})</span></span>
+                    <span className="text-right">All Periods</span>
+                  </div>
+
+                  {/* PI group */}
+                  <button onClick={() => setPiExpanded(!piExpanded)}
+                    className="w-full grid grid-cols-[1.6fr_120px_1fr_1fr] px-5 py-3 text-[13px] border-b border-bdLt items-center hover:bg-surf2/40 text-left">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="text-sage-700 w-3">{piExpanded ? '▾' : '▸'}</span>
+                      Principal Investigator ({piRows.filter(r => computeSubtotal(r, rows) > 0).length || 1})
+                    </span>
+                    <span></span>
+                    <span className="text-right text-mute">Salary<br/>Benefits on Salary</span>
+                    <span className="text-right tabular-nums">${piSalaryTotal.toLocaleString()}<br/><span className="text-mute">${piFringe.toLocaleString()}</span></span>
+                  </button>
+                  {piExpanded && piRows.map(r => {
+                    const sub = computeSubtotal(r, rows)
+                    if (sub === 0) return null
+                    const piFringeRow = totalSalary > 0 ? Math.round(fringeTotal * sub / totalSalary) : 0
+                    return (
+                      <div key={r.id} className="grid grid-cols-[1.6fr_120px_1fr_1fr] px-5 py-3 text-[12px] border-b border-bdLt items-center bg-page/50">
+                        <span className="pl-7">
+                          <div>{r.label}</div>
+                          <div className="text-[10px] text-mute">01-10 | {r.role.includes('Multi-PI') ? 'Multi-PI' : 'Professor'}</div>
+                        </span>
+                        <span></span>
+                        <span className="text-right text-mute text-[11px]">Salary<br/>Benefits on Salary</span>
+                        <span className="text-right tabular-nums">${sub.toLocaleString()}<br/><span className="text-mute">${piFringeRow.toLocaleString()}</span></span>
+                      </div>
+                    )
+                  })}
+
+                  {/* Grad Student group */}
+                  <button onClick={() => setRaExpanded(!raExpanded)}
+                    className="w-full grid grid-cols-[1.6fr_120px_1fr_1fr] px-5 py-3 text-[13px] border-b border-bdLt items-center hover:bg-surf2/40 text-left">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="text-sage-700 w-3">{raExpanded ? '▾' : '▸'}</span>
+                      Graduate Student ({raRows.filter(r => computeSubtotal(r, rows) > 0).length || 2})
+                    </span>
+                    <span></span>
+                    <span className="text-right text-mute">Salary<br/>Benefits on Salary</span>
+                    <span className="text-right tabular-nums">${raSalaryTotal.toLocaleString()}<br/><span className="text-mute">${raFringe.toLocaleString()}</span></span>
+                  </button>
+                  {raExpanded && raRows.map(r => {
+                    const sub = computeSubtotal(r, rows)
+                    if (sub === 0) return null
+                    const raFringeRow = totalSalary > 0 ? Math.round(fringeTotal * sub / totalSalary) : 0
+                    return (
+                      <div key={r.id} className="grid grid-cols-[1.6fr_120px_1fr_1fr] px-5 py-3 text-[12px] border-b border-bdLt items-center bg-page/50">
+                        <span className="pl-7">
+                          <div>{r.label}</div>
+                          <div className="text-[10px] text-mute">01-33 | {r.role.includes("Master") ? "Master's RA" : 'PhD RA'}</div>
+                        </span>
+                        <span></span>
+                        <span className="text-right text-mute text-[11px]">Salary<br/>Benefits on Salary</span>
+                        <span className="text-right tabular-nums">${sub.toLocaleString()}<br/><span className="text-mute">${raFringeRow.toLocaleString()}</span></span>
+                      </div>
+                    )
+                  })}
+
+                  {/* Salary total */}
+                  <div className="grid grid-cols-[1.6fr_120px_1fr_1fr] px-5 py-3 text-[13px] border-t-2 border-bdLt items-center bg-surf2/40">
+                    <span className="font-medium">Salary &amp; Benefit Costs Total</span>
+                    <span></span>
+                    <span className="text-right text-mute">Salary<br/>Benefits on Salary</span>
+                    <span className="text-right tabular-nums font-semibold">${salaryGrandTotal.toLocaleString()}<br/><span className="text-mute font-normal">${benefitsGrandTotal.toLocaleString()}</span></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Other Costs */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <h4 className="text-[15px] font-semibold">Other Costs</h4>
+                  <span className="text-sub" title="Help">ⓘ</span>
+                  <span className="ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 text-[9px] font-bold">✦ AI</span>
+                </div>
+                <div className="bg-card border border-bdLt rounded overflow-hidden">
+                  <div className="grid grid-cols-[1.6fr_120px_1fr_1fr] bg-page border-b border-bdLt px-5 py-2.5 text-[11px] text-mute font-semibold">
+                    <span>Description</span><span></span>
+                    <span className="text-right">Period 1<br/><span className="font-normal text-[10px]">({period})</span></span>
+                    <span className="text-right">All Periods</span>
+                  </div>
+                  {travelTotal > 0 && (
+                    <Line label="04 | Travel" count={1} amount={travelTotal} />
+                  )}
+                  {suppliesTotal > 0 && (
+                    <Line label="05 | Supplies and Materials" count={rows.filter(r => (r.category === 'supplies' || r.category === 'equipment') && computeSubtotal(r, rows) > 0).length} amount={suppliesTotal} />
+                  )}
+                  {tuitionTotal > 0 && (
+                    <Line label="08 | Student Aid" count={rows.find(r => r.id === 'tuit')?.numStudents || 2} amount={tuitionTotal} />
+                  )}
+                  <div className="grid grid-cols-[1.6fr_120px_1fr_1fr] px-5 py-3 text-[13px] border-t-2 border-bdLt items-center bg-surf2/40">
+                    <span className="font-medium">Other Costs Total</span>
+                    <span></span>
+                    <span className="text-right tabular-nums">${otherCostsTotal.toLocaleString()}</span>
+                    <span className="text-right tabular-nums font-semibold">${otherCostsTotal.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Project Totals */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <h4 className="text-[15px] font-semibold">Project Totals</h4>
+                  <span className="text-sub" title="Help">ⓘ</span>
+                </div>
+                <div className="bg-card border border-bdLt rounded overflow-hidden">
+                  <div className="grid grid-cols-[1.6fr_120px_1fr_1fr] bg-page border-b border-bdLt px-5 py-2.5 text-[11px] text-mute font-semibold">
+                    <span>Description</span><span></span>
+                    <span className="text-right">Period 1<br/><span className="font-normal text-[10px]">({period})</span></span>
+                    <span className="text-right">All Periods</span>
+                  </div>
+                  <button onClick={() => setTdcExpanded(!tdcExpanded)}
+                    className="w-full grid grid-cols-[1.6fr_120px_1fr_1fr] px-5 py-3 text-[13px] border-b border-bdLt items-center hover:bg-surf2/40 text-left">
+                    <span className="inline-flex items-center gap-2"><span className="text-sage-700 w-3">{tdcExpanded ? '▾' : '▸'}</span> Total Direct Costs</span>
+                    <span></span>
+                    <span className="text-right tabular-nums">${totals.directCosts.toLocaleString()}</span>
+                    <span className="text-right tabular-nums font-semibold">${totals.directCosts.toLocaleString()}</span>
+                  </button>
+                  <button onClick={() => setFaExpanded(!faExpanded)}
+                    className="w-full grid grid-cols-[1.6fr_120px_1fr_1fr] px-5 py-3 text-[13px] border-b border-bdLt items-center hover:bg-surf2/40 text-left">
+                    <span className="inline-flex items-center gap-2"><span className="text-sage-700 w-3">{faExpanded ? '▾' : '▸'}</span> Facilities and Administrative</span>
+                    <span></span>
+                    <span className="text-right tabular-nums">${totals.fa.toLocaleString()}</span>
+                    <span className="text-right tabular-nums font-semibold">${totals.fa.toLocaleString()}</span>
+                  </button>
+                  <div className="grid grid-cols-[1.6fr_120px_1fr_1fr] px-5 py-3.5 text-[14px] border-t-2 border-bdLt items-center bg-sage-50">
+                    <span className="font-semibold text-sage-700">Total Project Costs</span>
+                    <span></span>
+                    <span className="text-right tabular-nums font-semibold text-sage-700">${totals.total.toLocaleString()}</span>
+                    <span className="text-right tabular-nums font-bold text-sage-700">${totals.total.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              {reconciliationActive && (
+                <div className="bg-amber-50 border border-amber-bd rounded px-4 py-3 text-[12px] text-amber-700">
+                  <b>⚠ Reconciliation in progress.</b> NoA target $267,006. Workspace currently at ${totals.total.toLocaleString()}. Open Workspace to reconcile.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="bg-sage-700 text-white px-6 py-2 flex items-center justify-between text-[11px]">
+        <div className="flex items-center gap-5">
+          <span className="font-semibold">UNIVERSITY of WASHINGTON</span>
+          <span className="opacity-80">About SAGE ↗</span>
+          <span className="opacity-80">Learning ↗</span>
+          <span className="opacity-80">Contact Us ✉</span>
+        </div>
+        <span className="opacity-80">Release Date: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+      </div>
+    </div>
+  )
+}
+
+function Line({ label, count, amount }: { label: string; count: number; amount: number }) {
+  return (
+    <div className="grid grid-cols-[1.6fr_120px_1fr_1fr] px-5 py-3 text-[13px] border-b border-bdLt items-center">
+      <span className="inline-flex items-center gap-2"><span className="text-sage-700 w-3">▸</span> {label} ({count})</span>
+      <span></span>
+      <span className="text-right tabular-nums">${amount.toLocaleString()}</span>
+      <span className="text-right tabular-nums">${amount.toLocaleString()}</span>
     </div>
   )
 }
