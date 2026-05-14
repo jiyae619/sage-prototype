@@ -38,7 +38,7 @@ export function Pill({ children, tone = 'sage' }: { children: ReactNode; tone?: 
 }
 
 // Lightweight tooltip primitive — fixed positioning + keyboard accessible
-function HoverTip({ children, tip, label }: { children: ReactNode; tip: string; label?: string }) {
+export function HoverTip({ children, tip, label }: { children: ReactNode; tip: string; label?: string }) {
   const [hover, setHover] = useState(false)
   const [pos, setPos] = useState({ top: 0, left: 0 })
   const ref = useRef<HTMLSpanElement>(null)
@@ -72,7 +72,7 @@ function HoverTip({ children, tip, label }: { children: ReactNode; tip: string; 
       {hover && (
         <span
           role="tooltip"
-          className="fixed w-[280px] p-3 bg-ink text-white text-[11px] rounded-lg shadow-2xl leading-relaxed pointer-events-none"
+          className="fixed w-[280px] p-3 bg-ink text-white text-[11px] rounded-lg shadow-2xl leading-relaxed pointer-events-none whitespace-pre-line"
           style={{ top: pos.top, left: pos.left, zIndex: 1000 }}
         >
           {label && <span className="block uppercase tracking-widest text-[9px] text-sage-300 mb-1">{label}</span>}
@@ -86,12 +86,12 @@ function HoverTip({ children, tip, label }: { children: ReactNode; tip: string; 
 // PURPLE MEMO: Confidence chip for AI-suggested values
 export function ConfidenceChip({ level }: { level: 'high' | 'medium' | 'low' }) {
   const cfg = {
-    high:   { dot: 'bg-sage-500', label: 'High',   tip: 'Sourced directly from a UW system of record (Workday, OPB, or Grad School). No interpolation.' },
-    medium: { dot: 'bg-yellow-hi', label: 'Med',   tip: 'Derived from a structured rate table. Requires GM confirmation if rate effective date is older than 6 months.' },
-    low:    { dot: 'bg-red',       label: 'Low',   tip: 'Suggested from similar past budgets. Verify before accepting.' },
+    high:   { dot: 'bg-sage-500',  label: 'High Confidence',   tip: 'Sourced directly from a UW system of record (Workday, OPB, or Grad School). No interpolation.' },
+    medium: { dot: 'bg-yellow-hi', label: 'Medium Confidence', tip: 'Derived from a structured rate table. Requires GM confirmation if rate effective date is older than 6 months.' },
+    low:    { dot: 'bg-red',       label: 'Low Confidence',    tip: 'Suggested from similar past budgets. Verify before accepting.' },
   }[level]
   return (
-    <HoverTip tip={cfg.tip} label={`${cfg.label} confidence`}>
+    <HoverTip tip={cfg.tip} label={cfg.label}>
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-surf2 text-mute border border-bdLt whitespace-nowrap leading-none">
         <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} aria-hidden></span>
         <span className="whitespace-nowrap">{cfg.label}</span>
@@ -102,10 +102,10 @@ export function ConfidenceChip({ level }: { level: 'high' | 'medium' | 'low' }) 
 
 // PURPLE MEMO: Source tag with hover popover preview
 export function SourceTag({ source, snippet }: { source: string; snippet?: string }) {
-  if (!snippet) return <span className="text-[10px] text-sage-700 font-medium">↓ {source}</span>
+  if (!snippet) return <span className="text-[10px] text-sage-700 font-medium">↗ {source}</span>
   return (
     <HoverTip tip={snippet} label="Source preview">
-      <span className="text-[10px] text-sage-700 font-medium underline decoration-dotted underline-offset-2">↓ {source}</span>
+      <span className="text-[10px] text-sage-700 font-medium underline decoration-dotted underline-offset-2">↗ {source}</span>
     </HoverTip>
   )
 }
@@ -266,12 +266,12 @@ export function MismatchPanel({
         <div className="bg-amber-50 border border-amber-bd rounded-lg p-3 space-y-2">
           <div className="text-[12px] font-semibold text-amber-700">Rounding mismatch</div>
           <div className="grid grid-cols-[1fr_auto] gap-y-1 text-[12px]">
-            <span className="text-mute">Calculated at 54.5%</span>
+            <span className="text-mute">Calculated at 57.5%</span>
             <span className="font-mono font-semibold text-ink">${calculated.toLocaleString()}</span>
             <span className="text-mute">NoA shows</span>
             <span className="font-mono font-semibold text-ink">${target.toLocaleString()}</span>
             <span className="text-amber-700 font-semibold">Difference</span>
-            <span className="font-mono font-bold text-amber-700">${Math.abs(diff)}</span>
+            <span className="font-mono font-bold text-amber-700">${Math.abs(diff).toLocaleString()}</span>
           </div>
         </div>
 
@@ -283,7 +283,7 @@ export function MismatchPanel({
         <div className="space-y-2">
           <div className="text-[10px] uppercase tracking-widest text-sub font-semibold">Suggested fix</div>
           <div className="bg-sage-50 border border-sage-300 rounded-md p-3">
-            <div className="text-[13px] text-ink font-medium">Add ${Math.abs(diff)} to Miscellaneous</div>
+            <div className="text-[13px] text-ink font-medium">Add ${Math.abs(diff).toLocaleString()} to Miscellaneous</div>
             <div className="text-[11px] text-mute mt-0.5">Balances budget to ${target.toLocaleString()}</div>
           </div>
         </div>
@@ -649,12 +649,12 @@ export function Footer({ summary }: { summary?: string }) {
   )
 }
 
-export function Header({ title, idChip, status, totals, leading }: { title: string; idChip: string; status?: string; totals?: { label: string; value: string }[]; leading?: ReactNode }) {
+export function Header({ title, idChip, status, totals, leading }: { title: ReactNode; idChip: string; status?: string; totals?: { label: string; value: string }[]; leading?: ReactNode }) {
   return (
     <header className="bg-white border-b border-bdLt px-7 py-4 flex items-center gap-4">
       {leading}
       <button className="text-mute text-xl">‹</button>
-      <h1 className="text-[16px] font-semibold">{title}</h1>
+      {typeof title === 'string' ? <h1 className="text-[16px] font-semibold">{title}</h1> : title}
       <span className="text-[13px] text-mute">({idChip})</span>
       {status && <span className="text-[13px] font-medium text-sage-700">{status}</span>}
       <span className="text-sub text-xs">ⓘ</span>

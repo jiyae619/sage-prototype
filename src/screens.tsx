@@ -4,7 +4,7 @@ import {
   AIDisclaimer, Header, Footer,
   StickyCta, FloatingActionBar, FloatingBtn, Modal,
   MismatchPanel, ImportBlockerBanner,
-  SubTabs,
+  SubTabs, HoverTip,
   type Issue, type TabKey, type AwardsStep,
 } from './ui'
 
@@ -237,6 +237,10 @@ export function WorkspaceScreen(props: Nav) {
     reconciliationActive, egc1Submitted,
   } = props
   const [selectedRow, setSelectedRow] = useState<string | null>(null)
+  const [workspaceTitle, setWorkspaceTitle] = useState('Test 1')
+  const [titleEditing, setTitleEditing] = useState(false)
+  const [titleDraft, setTitleDraft] = useState('')
+  const TITLE_SUGGESTION = 'Eye Conditions Evaluation'
   const [pdfOpen, setPdfOpen] = useState(false)
   const [addinOpen, setAddinOpen] = useState(false)
   const [mismatchView, setMismatchView] = useState(false)
@@ -413,7 +417,34 @@ export function WorkspaceScreen(props: Nav) {
       )}
 
       <Header
-        title={isFilled ? 'Test 1 — Budget Draft' : 'New Budget Workspace · A224134'}
+        title={
+          isFilled ? (
+            titleEditing ? (
+              <input
+                value={titleDraft}
+                autoFocus
+                onChange={e => setTitleDraft(e.target.value)}
+                onBlur={() => { if (titleDraft.trim()) setWorkspaceTitle(titleDraft.trim()); setTitleEditing(false) }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { if (titleDraft.trim()) setWorkspaceTitle(titleDraft.trim()); setTitleEditing(false) }
+                  if (e.key === 'Escape') setTitleEditing(false)
+                }}
+                className="text-[16px] font-semibold px-2 py-0.5 border border-sage-500 rounded outline-none focus:ring-2 focus:ring-sage-500/30 min-w-[300px]"
+              />
+            ) : (
+              <button
+                onClick={() => {
+                  setTitleDraft(workspaceTitle === 'Test 1' ? TITLE_SUGGESTION : workspaceTitle)
+                  setTitleEditing(true)
+                }}
+                title="Click to edit — AI suggests the research title from the NoA"
+                className="text-[16px] font-semibold hover:bg-surf2 hover:text-sage-700 rounded px-1.5 -mx-1.5 transition inline-flex items-center gap-1.5 group">
+                {workspaceTitle} — Budget Draft
+                <span className="opacity-0 group-hover:opacity-60 text-[11px] text-sage-700">✎</span>
+              </button>
+            )
+          ) : 'New Budget Workspace · A224134'
+        }
         idChip={reconciliationActive ? 'Post-award · reconciling' : 'Pre-award draft'}
         status={hasTarget ? `· target $${target.toLocaleString()}` : '· no target set'}
         totals={[
@@ -450,7 +481,7 @@ export function WorkspaceScreen(props: Nav) {
             </span>
           </div>
         </> : (
-          <span className="text-mute">No target set — sum updates as you fill rows. <button onClick={suggestProposedTotal} className="text-purple-700 underline">Suggest from past proposals</button></span>
+          <span className="text-mute">No target set — sum updates as you fill rows. <HoverTip label="AI suggestion rationale" tip={`Based on 3 similar past NIH R34 vision-research proposals from this department:\n\n• Lupin 2022 R34 — $263k (same mechanism, same dept)\n• Moody 2023 R34 — $271k (similar 4-PI structure)\n• McGonagall 2023 R34 — $258k (same sponsor IC)\n\nMedian $263k · Mean $268k. Excludes proposals with >50% subaward.`}><button onClick={suggestProposedTotal} className="text-purple-700 underline">Suggest from past proposals</button></HoverTip></span>
         )}
         {reconciliationActive && issues.length > 0 && (
           <button onClick={openMismatch}
@@ -811,7 +842,7 @@ export function WorkspaceScreen(props: Nav) {
                   ? 'bg-sage-600 text-white hover:bg-sage-700'
                   : 'bg-white text-sage-700 border border-sage-600 hover:bg-sage-50'
               }`}>
-              Populate eGC1 <span aria-hidden>→</span>
+              Copy to eGC1 <span aria-hidden>→</span>
             </button>
           ) : reconciliationActive ? (
             <button onClick={() => goAwards('asr')}
@@ -1647,7 +1678,7 @@ function SendReviewIcon(){ return <Svg><line x1="22" y1="2" x2="11" y2="13" /><p
 // SCREEN — eGC1 Forms (auto-populated from Workspace)
 // =====================================================================
 
-export function EGC1FormsScreen({ go, goAwards, toast, rows, egc1Submitted, setEgc1Submitted }: Nav) {
+export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitted }: Nav) {
   const isFilled = rows.some(r => r.label !== '' || r.amount || r.monthlySalary)
   const totals = totalsOf(rows)
 
@@ -1796,8 +1827,8 @@ export function EGC1FormsScreen({ go, goAwards, toast, rows, egc1Submitted, setE
               <Button variant="secondary" onClick={() => toast('eGC1 already submitted. Waiting on sponsor.')}>
                 ✓ eGC1 submitted — awaiting NoA
               </Button>
-              <Button variant="primary" onClick={() => goAwards('noa')} icon={<span>↑</span>}>
-                Upload NoA
+              <Button variant="primary" onClick={() => go('budgets')} icon={<span>⌂</span>}>
+                Go to Home
               </Button>
             </>
           : <Button variant="primary" disabled={!isFilled} onClick={() => { setEgc1Submitted(true); toast('eGC1 submitted to Department › OSP. Awaiting NoA from sponsor.') }} icon={<span>→</span>}>
@@ -1854,8 +1885,18 @@ function NoaSubStage({ toast, noaUploaded, setNoaUploaded, setAwardsStep, rows }
     }, 1400)
   }
 
-  function startUpload() {
-    fileInputRef.current?.click()
+  async function startUpload() {
+    if (phase !== 'empty') return
+    // Demo: load the bundled sample NoA so the user doesn't have to pick a file.
+    try {
+      const res = await fetch('/sample-noa.pdf')
+      const blob = await res.blob()
+      const file = new File([blob], 'NIH-Grants-Process-Primer-Sample-NOA.pdf', { type: 'application/pdf' })
+      handleFile(file)
+    } catch {
+      // Fallback: open the native file picker if the bundled sample is missing.
+      fileInputRef.current?.click()
+    }
   }
 
   function onDrop(e: React.DragEvent) {
@@ -1864,7 +1905,7 @@ function NoaSubStage({ toast, noaUploaded, setNoaUploaded, setAwardsStep, rows }
     if (file) handleFile(file)
   }
 
-  const extracted = [
+  const [extracted, setExtracted] = useState([
     { label: 'FAIN',                 value: 'R34EY000000',               confidence: 'high' as const, source: 'NoA · §12' },
     { label: 'Award Number',         value: '1R34EY000000-01',           confidence: 'high' as const, source: 'NoA · §11' },
     { label: 'Project Title',        value: 'Test 1', confidence: 'high' as const, source: 'NoA · §14' },
@@ -1879,10 +1920,15 @@ function NoaSubStage({ toast, noaUploaded, setNoaUploaded, setAwardsStep, rows }
     { label: 'Contact PI',           value: 'Harry Potter, OD',          confidence: 'high' as const, source: 'NoA · §7' },
     { label: 'Multi-PIs',            value: 'Moody · Lupin · McGonagall', confidence: 'high' as const, source: 'NoA · §I' },
     { label: 'Authorized Official',  value: 'Hermione Granger',          confidence: 'medium' as const, source: 'NoA · §8' },
-  ]
+  ])
+  const [editingField, setEditingField] = useState<string | null>(null)
+  function updateField(label: string, newValue: string) {
+    setExtracted(extracted.map(f => f.label === label ? { ...f, value: newValue } : f))
+  }
 
   return (
-    <div className="flex-1 overflow-auto p-8 max-w-[1100px] w-full">
+    <div className="flex-1 flex overflow-hidden">
+    <div className="flex-1 overflow-auto p-8">
       <h2 className="text-[22px] font-semibold mb-1">Notice of Award upload</h2>
       <p className="text-[13px] text-mute mb-5">Drop the NoA PDF. AI extracts all award fields and stages the diff against your Workspace.</p>
       <AIDisclaimer />
@@ -1956,9 +2002,21 @@ function NoaSubStage({ toast, noaUploaded, setNoaUploaded, setAwardsStep, rows }
             <div className="grid grid-cols-2 gap-x-6 gap-y-0 p-5">
               {extracted.map(f => (
                 <div key={f.label} className="py-2 border-b border-bdLt last:border-b-0">
-                  <div className="text-[10px] text-sub uppercase tracking-widest font-semibold">{f.label}</div>
-                  <div className="text-[13px] font-semibold mt-0.5 flex items-center gap-2">
-                    {f.value}
+                  <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-1">{f.label}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 relative">
+                      <input
+                        value={f.value}
+                        onChange={e => updateField(f.label, e.target.value)}
+                        onFocus={() => setEditingField(f.label)}
+                        onBlur={() => setEditingField(null)}
+                        title="Click to edit"
+                        className={`w-full px-2.5 py-1.5 pr-7 text-[13px] font-semibold rounded border transition focus:outline-none focus:ring-2 focus:ring-sage-500/30 focus:border-sage-500 hover:border-sage-400 ${
+                          editingField === f.label ? 'border-sage-500 bg-white' : 'border-bdLt bg-surf2/30'
+                        }`}
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-sub pointer-events-none">✎</span>
+                    </div>
                     <ConfidenceChip level={f.confidence} />
                   </div>
                   <div className="mt-1"><SourceTag source={f.source} /></div>
@@ -1969,11 +2027,63 @@ function NoaSubStage({ toast, noaUploaded, setNoaUploaded, setAwardsStep, rows }
 
           <div className="mt-6 flex justify-end">
             <Button variant="primary" onClick={() => setAwardsStep('reconcile')} icon={<span>→</span>}>
-              Continue to Reconciliation
+              Reconciliate
             </Button>
           </div>
         </>
       )}
+    </div>
+    {/* Right preview panel — NoA PDF preview */}
+    {phase === 'ready' && (
+      <aside className="w-[360px] bg-[#F5EFD5] border-l border-bdLt flex flex-col overflow-hidden shrink-0">
+        <div className="h-9 px-3.5 flex items-center gap-2 text-[11px] text-mute border-b border-bdLt/60">
+          <span>📎</span>
+          <span className="font-medium truncate">{uploadedFile?.name ?? 'NIH-Grants-Process-Primer-Sample-NOA.pdf'}</span>
+          <div className="flex-1" />
+          <span className="px-1.5 py-0.5 rounded bg-sage-100 text-sage-700 text-[9px] font-semibold whitespace-nowrap">Page 1</span>
+        </div>
+        <div className="p-4 flex-1 overflow-auto">
+          <div className="bg-white border border-bdLt rounded shadow-sm p-4 space-y-3 text-[10px] leading-relaxed">
+            <div className="flex items-start gap-2 border-b border-bdLt pb-3">
+              <div className="w-8 h-8 rounded-full bg-sage-100 flex items-center justify-center text-[14px]">🏛</div>
+              <div className="flex-1">
+                <div className="text-[8px] uppercase tracking-widest text-mute font-semibold">U.S. DEPARTMENT OF HHS</div>
+                <div className="text-[11px] font-bold">National Institutes of Health</div>
+                <div className="text-[9px] text-mute">Notice of Award</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[9px]">
+              <div><div className="text-mute">FAIN</div><div className="font-semibold">R34EY000000</div></div>
+              <div><div className="text-mute">Federal Award Date</div><div className="font-semibold">02/21/2024</div></div>
+            </div>
+            <div className="bg-yellow-hi/60 border border-amber-bd rounded px-2 py-1.5">
+              <div className="text-[8px] uppercase tracking-widest text-mute font-semibold">Award Number</div>
+              <div className="text-[11px] font-bold">1R34EY000000-01</div>
+            </div>
+            <div>
+              <div className="text-[8px] uppercase tracking-widest text-mute font-semibold">Project Title</div>
+              <div className="text-[10px]">Eye Conditions Evaluation</div>
+            </div>
+            <div className="border-t border-bdLt pt-2 grid grid-cols-2 gap-2">
+              <div><div className="text-mute">Budget Period</div><div className="font-semibold">03/01/2024 – 02/28/2025</div></div>
+              <div><div className="text-mute">Project Period</div><div className="font-semibold">03/01/2024 – 02/28/2026</div></div>
+            </div>
+            <div className="bg-sage-50 border border-sage-300 rounded px-2 py-1.5 space-y-1">
+              <div className="flex justify-between"><span className="text-mute">Total Y1</span><span className="font-bold">$267,006</span></div>
+              <div className="flex justify-between"><span className="text-mute">Direct Costs</span><span>$204,400</span></div>
+              <div className="flex justify-between"><span className="text-mute">F&A</span><span>$62,606</span></div>
+              <div className="flex justify-between text-[8px] text-mute"><span>F&A Rate</span><span>57.5% MTDC</span></div>
+            </div>
+            <div>
+              <div className="text-[8px] uppercase tracking-widest text-mute font-semibold">Contact PI</div>
+              <div className="text-[10px] font-semibold">Harry Potter, OD</div>
+              <div className="text-[9px] text-mute">+ Moody · Lupin · McGonagall</div>
+            </div>
+            <div className="text-[9px] text-sub pt-2 border-t border-bdLt italic">Page 1 of 8 · scroll to view more</div>
+          </div>
+        </div>
+      </aside>
+    )}
     </div>
   )
 }
@@ -2846,7 +2956,7 @@ export function GuideScreen({ go, goAwards }: Nav) {
 
             <Step n={2} title="Populate the eGC1 form" tab="eGC1 Forms tab" jumpLabel="Open eGC1 Forms" onJump={() => go('egc1')}>
               <ul>
-                <li>Click the floating <b>"Populate eGC1 →"</b> button in Workspace, or just switch tabs.</li>
+                <li>Click the floating <b>"Copy to eGC1 →"</b> button in Workspace, or just switch tabs.</li>
                 <li>The eGC1 Budget &amp; Fiscal Compliance section is auto-filled from your Workspace formulas, mapped to FAS Object Codes.</li>
                 <li>Click <b>"Submit eGC1 to Department"</b> at the bottom to advance.</li>
               </ul>
