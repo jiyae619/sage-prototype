@@ -363,21 +363,47 @@ export function IssuesPanel({
 // Right-panel mismatch resolution UI — replaces the top issues banner
 // with a contextual deep-dive (per Figma frame 134:239)
 export function MismatchPanel({
-  issue, currentTotal, target, onApplyFix, onAdjustManually, onClose,
+  issue, issueIndex, issueTotal, currentTotal, target, onApplyFix, onAdjustManually, onClose, onNext, onPrev,
 }: {
   issue: Issue;
+  issueIndex: number;
+  issueTotal: number;
   currentTotal: number;
   target: number;
   onApplyFix: () => void;
   onAdjustManually: () => void;
   onClose: () => void;
+  onNext?: () => void;
+  onPrev?: () => void;
 }) {
   const diff = target - currentTotal
-  const calculated = currentTotal
+
+  // Mismatch-specific display content
+  const mismatchTitles: Record<string, string> = {
+    'iss-fa':     'Rounding mismatch',
+    'iss-travel': 'Over-budget line',
+    'iss-tuit':   'Rate change',
+  }
+  const mismatchReasons: Record<string, string> = {
+    'iss-fa':     'SAGE and Excel round 54.5% differently. This is a system difference, not a data error.',
+    'iss-travel': 'The proposed travel amount exceeds the NoA award limit for this line. Sponsor may have trimmed the conference budget.',
+    'iss-tuit':   'The OPB published FY25 RA tuition rates after your proposal was submitted. Reconciling uses the awarded year\'s rates.',
+  }
+  const mismatchTitle = mismatchTitles[issue.id] ?? 'Budget mismatch'
+  const mismatchReason = mismatchReasons[issue.id] ?? 'Review the row and apply the suggested correction to balance the budget.'
+
   return (
     <aside className="w-[340px] bg-white border-l border-bdLt flex flex-col overflow-hidden shrink-0 animate-[slideInRight_220ms_ease-out]">
       <div className="bg-amber-700 text-white px-4 py-3 flex items-center justify-between text-[13px] font-semibold">
-        <span className="flex items-center gap-2"><span aria-hidden>⚠</span> Budget Mismatch</span>
+        <span className="flex items-center gap-2">
+          <span aria-hidden>⚠</span>
+          Budget Mismatch
+          {issueTotal > 1 && (
+            <span className="ml-1 px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-semibold">
+              {issueIndex + 1} of {issueTotal}
+            </span>
+          )}
+        </span>
         <button onClick={onClose} className="text-[11px] px-2 py-1 border border-white/40 rounded hover:bg-white/10" title="Close">Close</button>
       </div>
 
@@ -389,27 +415,20 @@ export function MismatchPanel({
 
         {/* Numeric breakdown */}
         <div className="bg-amber-50 border border-amber-bd rounded-lg p-3 space-y-2">
-          <div className="text-[12px] font-semibold text-amber-700">Rounding mismatch</div>
-          <div className="grid grid-cols-[1fr_auto] gap-y-1 text-[12px]">
-            <span className="text-mute">Calculated at 57.5%</span>
-            <span className="font-mono font-semibold text-ink">${calculated.toLocaleString()}</span>
-            <span className="text-mute">NoA shows</span>
-            <span className="font-mono font-semibold text-ink">${target.toLocaleString()}</span>
-            <span className="text-amber-700 font-semibold">Difference</span>
-            <span className="font-mono font-bold text-amber-700">${Math.abs(diff).toLocaleString()}</span>
-          </div>
+          <div className="text-[12px] font-semibold text-amber-700">{mismatchTitle}</div>
+          <p className="text-[11px] text-amber-700/90 leading-relaxed">{issue.type}</p>
         </div>
 
         <div className="space-y-1.5">
           <div className="text-[10px] uppercase tracking-widest text-sub font-semibold">Why this happened</div>
-          <p className="text-mute leading-relaxed">SAGE and Excel round 54.5% differently. This is a system difference, not a data error.</p>
+          <p className="text-mute leading-relaxed">{mismatchReason}</p>
         </div>
 
         <div className="space-y-2">
           <div className="text-[10px] uppercase tracking-widest text-sub font-semibold">Suggested fix</div>
           <div className="bg-sage-50 border border-sage-300 rounded-md p-3">
-            <div className="text-[13px] text-ink font-medium">Add ${Math.abs(diff).toLocaleString()} to Miscellaneous</div>
-            <div className="text-[11px] text-mute mt-0.5">Balances budget to ${target.toLocaleString()}</div>
+            <div className="text-[13px] text-ink font-medium">{issue.correction}</div>
+            <div className="text-[11px] text-mute mt-0.5">Resolves this mismatch</div>
           </div>
         </div>
 
@@ -423,6 +442,24 @@ export function MismatchPanel({
             Adjust manually
           </button>
         </div>
+
+        {/* Prev / Next navigation for multi-mismatch */}
+        {issueTotal > 1 && (
+          <div className="flex gap-2 pt-1 border-t border-bdLt">
+            <button
+              onClick={onPrev}
+              disabled={issueIndex === 0}
+              className="flex-1 px-3 py-1.5 text-[11px] font-semibold rounded border border-bd text-mute hover:bg-surf2 disabled:opacity-30 disabled:cursor-not-allowed transition">
+              ← Prev
+            </button>
+            <button
+              onClick={onNext}
+              disabled={issueIndex >= issueTotal - 1}
+              className="flex-1 px-3 py-1.5 text-[11px] font-semibold rounded border border-amber-bd bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-30 disabled:cursor-not-allowed transition">
+              Next mismatch →
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Reconciliation summary footer */}
@@ -432,13 +469,15 @@ export function MismatchPanel({
           <span className="font-semibold font-mono">${target.toLocaleString()}</span>
         </div>
         <div className="flex items-center justify-between text-[12px]">
-          <span className="text-mute">Current total</span>
-          <span className="font-semibold font-mono text-amber-700">${currentTotal.toLocaleString()}</span>
+          <span className="text-mute">Remaining mismatches</span>
+          <span className={`font-semibold font-mono ${issueTotal > 0 ? 'text-amber-700' : 'text-sage-700'}`}>{issueTotal}</span>
         </div>
-        <div className="flex items-center justify-between text-[12px]">
-          <span className="text-mute">After fix</span>
-          <span className="font-semibold font-mono text-sage-700 flex items-center gap-1">${target.toLocaleString()} <span aria-hidden>✓</span></span>
-        </div>
+        {issueTotal === 0 && (
+          <div className="flex items-center justify-between text-[12px]">
+            <span className="text-mute">Status</span>
+            <span className="font-semibold font-mono text-sage-700 flex items-center gap-1">Reconciled ✓</span>
+          </div>
+        )}
       </div>
     </aside>
   )

@@ -137,6 +137,20 @@ export const INITIAL_ISSUES: Issue[] = [
     type: 'Rounding mismatch — system rounding difference, not a data error.',
     correction: 'Add $41 to Miscellaneous so totals match the NoA.',
   },
+  {
+    id: 'iss-travel',
+    cellRef: 'C11',
+    location: 'B. Travel · ARVO Annual Meeting (row 11)',
+    type: 'Budget line exceeds NoA allowance by $219.',
+    correction: 'Reduce travel to $3,062 to match the awarded amount.',
+  },
+  {
+    id: 'iss-tuit',
+    cellRef: 'F14',
+    location: 'D. Student Aid · Grad RA tuition (row 14)',
+    type: 'Tuition rate change — OPB FY25 rate differs from proposed FY24.',
+    correction: 'Update tuition per quarter from $7,257 to $7,410 (FY25 OPB rate).',
+  },
 ]
 
 export function computeSubtotal(row: WorkspaceRow, allRows: WorkspaceRow[]): number {
@@ -262,6 +276,7 @@ export function WorkspaceScreen(props: Nav) {
   const [piComment, setPiComment] = useState('')
   const [proposedDraft, setProposedDraft] = useState('')
   const [raDepartmentId, setRaDepartmentId] = useState('')
+  const [mismatchIndex, setMismatchIndex] = useState(0)
   const raDepartment = UW_VARIABLE_RA_DEPARTMENTS.find(d => d.id === raDepartmentId) ?? UW_VARIABLE_RA_DEPARTMENTS[0]
 
   const NOA_TOTAL = 267006
@@ -271,7 +286,7 @@ export function WorkspaceScreen(props: Nav) {
   const delta = target - totals.total
   const totalsBalance: 'match' | 'mismatch' | 'neutral' = !hasTarget ? 'neutral' : (delta === 0 ? 'match' : 'mismatch')
   const isFilled = rows.some(r => r.label !== '' || r.amount || r.monthlySalary)
-  const activeMismatch = issues[0]
+  const activeMismatch = issues[mismatchIndex] ?? issues[0]
 
   function aiPrefill() {
     setRows(AI_PREFILL)
@@ -315,16 +330,29 @@ export function WorkspaceScreen(props: Nav) {
       : 'PI has requested changes — review their comments.')
   }
   function applyMismatchFix() {
-    setIssues(() => [])
-    setMismatchView(false)
-    toast(`Fix applied. Budget reconciled to $${NOA_TOTAL.toLocaleString()}.`)
+    const current = issues[mismatchIndex]
+    if (!current) return
+    const remaining = issues.filter(i => i.id !== current.id)
+    setIssues(() => remaining)
+    if (remaining.length > 0) {
+      const nextIdx = Math.min(mismatchIndex, remaining.length - 1)
+      setMismatchIndex(nextIdx)
+      setSelectedRow(remaining[nextIdx]?.cellRef?.replace(/[^a-z0-9]/gi, '').toLowerCase() ?? 'fa')
+      toast(`Mismatch ${mismatchIndex + 1} fixed. ${remaining.length} remaining.`)
+    } else {
+      setMismatchView(false)
+      setMismatchIndex(0)
+      toast(`All mismatches resolved. Budget reconciled to $${NOA_TOTAL.toLocaleString()}.`)
+    }
   }
   function adjustManually() {
-    setMismatchView(false); setSelectedRow('fa')
-    toast('Manual adjustment — edit the F&A row directly.')
+    setMismatchView(false); setSelectedRow(activeMismatch?.cellRef?.replace(/[^a-z]/gi, '').toLowerCase() ?? 'fa')
+    toast('Manual adjustment — edit the row directly.')
   }
-  function openMismatch() {
-    setAddinOpen(true); setMismatchView(true); setSelectedRow('fa')
+  function openMismatch(idx = 0) {
+    setMismatchIndex(idx)
+    setAddinOpen(true); setMismatchView(true)
+    setSelectedRow(issues[idx]?.cellRef?.replace(/[^a-z0-9]/gi, '').toLowerCase() ?? 'fa')
   }
   function runValidate() {
     if (!reconciliationActive) {
@@ -355,37 +383,13 @@ export function WorkspaceScreen(props: Nav) {
   function verifyRow(rowId: string) {
     const r = rows.find(x => x.id === rowId)
     if (!r) return
-    const testingFill: Record<string, Partial<WorkspaceRow>> = {
-      per1: { label: r.label || 'Harry Potter', role: r.role || 'Contact PI · OD', roleType: r.roleType || 'PI', monthlySalary: r.monthlySalary || 16826, effortPct: r.effortPct || 10, months: r.months || 9 },
-      per2: { label: 'Alastor Moody', role: 'Multi-PI · OD', roleType: 'PI', monthlySalary: 16822, effortPct: 5, months: 9 },
-      per3: { label: 'Remus Lupin', role: 'Multi-PI', roleType: 'PI', monthlySalary: 16822, effortPct: 5, months: 9 },
-      per4: { label: 'Minerva McGonagall', role: 'Multi-PI · MD', roleType: 'PI', monthlySalary: 21867, effortPct: 5, months: 9 },
-      per5: { label: 'Draco Malfoy', role: 'Candidate · Sch 1', roleType: 'Grad-PhD', monthlySalary: 3621, effortPct: 50, months: 9 },
-      per6: { label: 'Neville Longbottom', role: "Master's · Sch 1", roleType: 'Grad-Master', monthlySalary: 3219, effortPct: 50, months: 9 },
-      fringe: { label: 'Fringe benefits', role: 'Faculty 27% / Grad 18.2% blended', fringeRate: 22.7 },
-      travel: { label: 'ARVO Annual Meeting', role: '1 PI · 4 nights · Seattle', amount: 3281 },
-      sup: { label: 'Lab supplies', role: 'Vision lab consumables', amount: 5000 },
-      eq: { label: 'OCT Imaging Module', role: 'Heidelberg SPECTRALIS', amount: 5000 },
-      tuit: { label: 'Grad RA tuition', role: '2 students · 3 quarters · OPB FY24', tuitionPerQuarter: 7257, numStudents: 2, months: 9, excludedFromMtdc: true },
-      fa: { label: 'F&A indirect costs', role: 'Auto · 57.5% MTDC', faRate: 57.5, excludedFromMtdc: true },
-    }
-    const next = rows.map(x => {
-      const fill = testingFill[x.id]
-      if (!fill) return x
-      return {
-        ...x,
-        ...fill,
-        label: x.label || fill.label || '',
-        role: x.role || fill.role || '',
-        autoPopulated: x.id === rowId ? false : true,
-        verified: x.id === rowId,
-      }
-    })
+    // Only the saved row is affected — other rows are left untouched (no auto-populate).
+    const next = rows.map(x =>
+      x.id === rowId ? { ...x, autoPopulated: false, verified: true } : x
+    )
     setRows(next)
     if (r.id === 'eq') {
       toast(`✓ ${r.label} approved.`)
-    } else {
-      toast(`✓ ${r.label || 'Role'} saved. Remaining rows auto-populated for testing.`)
     }
   }
 
@@ -483,10 +487,10 @@ export function WorkspaceScreen(props: Nav) {
           <span className="text-mute">No target set — sum updates as you fill rows. <HoverTip label="AI suggestion rationale" tip={`Based on 3 similar past NIH R34 vision-research proposals from this department:\n\n• Lupin 2022 R34 — $263k (same mechanism, same dept)\n• Moody 2023 R34 — $271k (similar 4-PI structure)\n• McGonagall 2023 R34 — $258k (same sponsor IC)\n\nMedian $263k · Mean $268k. Excludes proposals with >50% subaward.`}><button onClick={suggestProposedTotal} className="text-purple-700 underline">Suggest from past proposals</button></HoverTip></span>
         )}
         {reconciliationActive && issues.length > 0 && (
-          <button onClick={openMismatch}
-            className="ml-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-bd text-amber-700 text-[11px] font-semibold hover:bg-amber-100 transition">
+          <button onClick={() => openMismatch(0)}
+            className="ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-700 text-white text-[11px] font-semibold shadow-md hover:bg-amber-800 transition">
             <span aria-hidden>⚠</span>
-            {issues.length} mismatch · Resolve →
+            {issues.length} mismatch{issues.length > 1 ? 'es' : ''} · Resolve →
           </button>
         )}
         <div className="flex-1" />
@@ -520,11 +524,6 @@ export function WorkspaceScreen(props: Nav) {
                 disabled={reconciliationActive}
                 className="w-32 px-2.5 py-1 border border-bd rounded text-[13px] tabular-nums focus:outline-none focus:border-sage-500 disabled:bg-surf2 disabled:cursor-not-allowed"
               />
-              {proposedTotal === 0 && !reconciliationActive && (
-                <button onClick={suggestProposedTotal} data-tutorial-target="proposed-total-suggest" className="text-[11px] text-purple-700 underline inline-flex items-center gap-1">
-                  <span aria-hidden>✦</span> AI suggest
-                </button>
-              )}
             </div>
             <div className="h-5 w-px bg-bdLt" />
             <div className="flex items-center gap-2 min-w-0 max-w-[min(100%,280px)]">
@@ -606,7 +605,8 @@ export function WorkspaceScreen(props: Nav) {
                         onClick={() => {
                           setSelectedRow(r.id)
                           if (r.id === 'eq' && pdfOpen) { setAddinOpen(true); setMismatchView(false) }
-                          else if (r.category === 'personnel') { setAddinOpen(true); setMismatchView(false) }
+                          // Personnel panel only opens once a role is selected — no blank placeholder panel.
+                          else if (r.category === 'personnel' && r.roleType) { setAddinOpen(true); setMismatchView(false) }
                           else if (r.id === 'fa' && hasIssue) { setAddinOpen(true); setMismatchView(true) }
                         }}
                         className={`grid grid-cols-[40px_minmax(220px,1.4fr)_minmax(150px,1fr)_100px_60px_60px_100px_120px] border-b border-bdLt h-9 text-[12px] cursor-pointer transition ${
@@ -654,6 +654,7 @@ export function WorkspaceScreen(props: Nav) {
                                   monthlySalary: r.monthlySalary || cfg?.monthlySalary,
                                   effortPct:     r.effortPct     || (cfg ? Number(cfg.fteLabel.replace(/[^0-9]/g, '')) || 50 : undefined),
                                   months:        r.months        || 9,
+                                  inflationRate: r.inflationRate ?? 3,
                                   role:          r.role          || (cfg ? `${cfg.posType} · ${cfg.level}` : ''),
                                 })
                                 if (newRole) { setAddinOpen(true); setSelectedRow(r.id) }
@@ -801,11 +802,21 @@ export function WorkspaceScreen(props: Nav) {
         {addinOpen && mismatchView && activeMismatch && (
           <MismatchPanel
             issue={activeMismatch}
+            issueIndex={mismatchIndex}
+            issueTotal={issues.length}
             currentTotal={totals.total}
             target={target}
             onApplyFix={applyMismatchFix}
             onAdjustManually={adjustManually}
             onClose={() => setMismatchView(false)}
+            onNext={() => {
+              const next = Math.min(mismatchIndex + 1, issues.length - 1)
+              setMismatchIndex(next)
+            }}
+            onPrev={() => {
+              const prev = Math.max(mismatchIndex - 1, 0)
+              setMismatchIndex(prev)
+            }}
           />
         )}
         {addinOpen && !mismatchView && !piReviewOpen && selectedRow && (() => {
@@ -860,7 +871,6 @@ export function WorkspaceScreen(props: Nav) {
             icon={<PaperclipIcon />} />
           <FloatingBtn tooltip="Validate" onClick={runValidate} icon={<CheckIcon />} tutorialTarget="validate-button" />
           <FloatingBtn tooltip="Send to PI for review" onClick={sendForPiReview} icon={<SendReviewIcon />} label="PI Review" tutorialTarget="pi-review-button" />
-          <FloatingAiAssistSwitch on={aiOn} onToggle={() => toggleAiAssist(!aiOn)} tutorialTarget="ai-assist-switch" />
           <span className="w-px h-6 bg-bd mx-1 shrink-0" aria-hidden />
           {!egc1Submitted ? (
             <button onClick={() => { toast('eGC1 auto-populated from Worksheet.'); go('egc1') }}
@@ -1254,6 +1264,12 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
   const monthsForFte = Number(cfg.fteLabel.replace(/[^0-9]/g, '')) || 0
   const fteValue = row.effortPct !== undefined ? `${row.effortPct}%` : `${monthsForFte}%`
 
+  // F&A (indirect costs) — computed from the modified total direct cost (MTDC) base.
+  const { mtdcBase } = totalsOf(allRows)
+  const faRate = allRows.find(r => r.category === 'fa')?.faRate ?? 57.5
+  const faAmount = Math.round(mtdcBase * faRate / 100)
+  const addsIndirect = !row.excludedFromMtdc
+
   return (
     <aside className="w-[420px] bg-white border-l border-bdLt flex flex-col overflow-hidden shrink-0 animate-[slideInRight_220ms_ease-out]">
       <PanelHeader period={period} subtotal={sub} onClose={onClose} />
@@ -1306,17 +1322,19 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
             </div>
             <div>
               <div className="text-[10px] text-mute">Fringe Rate</div>
-              <div className="font-semibold text-ink">{cfg.fringeRate}% <span className="text-[10px] text-mute font-normal">(OMA, FY24)</span></div>
+              <div className="font-semibold text-ink">{cfg.fringeRate}% <span className="text-[10px] text-mute font-normal">(OMA, FY26)</span></div>
+              <div className="text-[10px] text-sage-700 font-medium mt-0.5">FY26 rate · UW Finance · May 18, 2026</div>
             </div>
             {cfg.tuitionAnnual > 0 && (
               <div>
                 <div className="text-[10px] text-mute">Tuition</div>
-                <div className="font-semibold text-ink">${cfg.tuitionAnnual.toLocaleString()}/yr <span className="text-[10px] text-mute font-normal">(OPB)</span></div>
+                <div className="font-semibold text-ink">${cfg.tuitionAnnual.toLocaleString()}/yr <span className="text-[10px] text-mute font-normal">(OPB, FY26)</span></div>
+                <div className="text-[10px] text-sage-700 font-medium mt-0.5">FY26 rate · OPB · May 18, 2026</div>
               </div>
             )}
           </div>
           <div className="border-t border-purple-700/15 pt-2 mt-1 text-[11px] text-purple-700 inline-flex items-center gap-1.5">
-            <span>ⓘ</span> Rates effective as of April 2024.
+            <span>ⓘ</span> Rates effective FY26 · pulled from UW Finance · May 18, 2026.
           </div>
         </div>
 
@@ -1333,6 +1351,26 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
         <div>
           <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-1">Adjusted Monthly Base Salary</div>
           <div className="text-[16px] font-semibold tabular-nums">${adjusted.toLocaleString()}</div>
+        </div>
+
+        {/* F&A / Indirect Costs */}
+        <div className="border border-bdLt rounded-md px-3.5 py-3 space-y-2.5">
+          <div className="text-[10px] text-sub uppercase tracking-widest font-semibold">F&amp;A · Indirect Costs</div>
+
+          <div className={`flex items-start gap-1.5 text-[12px] ${addsIndirect ? 'text-sage-700' : 'text-mute'}`}>
+            <span className="shrink-0 font-semibold">{addsIndirect ? '✓' : '✕'}</span>
+            <span>
+              {addsIndirect
+                ? 'This row is in the MTDC base — it adds F&A indirect costs.'
+                : 'This row is excluded from the MTDC base — it adds no F&A indirect costs.'}
+            </span>
+          </div>
+
+          <div className="bg-surf2 rounded px-3 py-2 text-[12px] tabular-nums leading-relaxed">
+            MTDC base ${mtdcBase.toLocaleString()} × {faRate}% = <b>${faAmount.toLocaleString()}</b>
+          </div>
+
+          <div className="text-[11px] text-mute">Excludes tuition + equipment over $5,000 from the MTDC base.</div>
         </div>
 
         {row.autoPopulated && !row.verified && (
@@ -1557,22 +1595,22 @@ const PERSONNEL_CONFIGS: Record<string, {
   'PI': {
     positionType: 'Faculty', schedule: '12-month', level: 'Professor', fte: '10%',
     monthlySalary: 16826, annual: 201912, fringeRate: 27,
-    salarySource: 'Workday, eff. 3/1', fringeSource: 'OMA, FY24',
+    salarySource: 'Workday, eff. 3/1', fringeSource: 'OMA, FY26',
   },
   "Grad RA · PhD · Sch 1": {
     positionType: 'Grad RA', schedule: '9-month', level: 'PhD', fte: '50%',
     monthlySalary: 7242, annual: 65178, fringeRate: 10,
-    salarySource: 'Grad School, eff. 9/1', fringeSource: 'OPB, FY24',
+    salarySource: 'Grad School, eff. 9/1', fringeSource: 'OPB, FY26',
   },
   "Grad RA · Master's · Sch 1": {
     positionType: 'Grad RA', schedule: '9-month', level: "Master's", fte: '50%',
     monthlySalary: 6438, annual: 57942, fringeRate: 10,
-    salarySource: 'Grad School, eff. 9/1', fringeSource: 'OPB, FY24',
+    salarySource: 'Grad School, eff. 9/1', fringeSource: 'OPB, FY26',
   },
   'Undergrad RA · Bachelor': {
     positionType: 'Undergrad RA', schedule: '12-month', level: 'Bachelor', fte: '20%',
     monthlySalary: 3200, annual: 38400, fringeRate: 5,
-    salarySource: 'Workday estimate', fringeSource: 'OPB, FY24',
+    salarySource: 'Workday estimate', fringeSource: 'OPB, FY26',
   },
 }
 
@@ -1648,9 +1686,12 @@ function PersonnelDetailPanel({ row, subtotal, onSave, onClose }: {
             </div>
           </div>
 
-          <div className="border-t border-purple-700/15 pt-2 flex items-center gap-1.5 text-[11px] text-purple-700">
-            <span>ⓘ</span>
-            <span>Rates effective as of April 2024.</span>
+          <div className="border-t border-purple-700/15 pt-2 space-y-0.5">
+            <div className="flex items-center gap-1.5 text-[11px] text-purple-700">
+              <span>ⓘ</span>
+              <span>FY26 rate · pulled from UW Finance · May 18, 2026</span>
+            </div>
+            <div className="text-[10px] text-sage-700 font-medium">✓ Current — rates verified today</div>
           </div>
         </div>
 
@@ -1850,7 +1891,13 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
 
         <div className="px-6 py-2.5 border-b border-sage-100 bg-sage-50 text-sage-700 text-[12px] flex items-center gap-3">
           <span className="w-5 h-5 rounded-full bg-sage-600 text-white flex items-center justify-center text-[11px] font-bold">✓</span>
-          <span className="font-medium">eGC1 submitted to Department › OSP · Award setup is waiting for NoA approval</span>
+          <span className="font-medium flex items-center gap-2">
+            <span className="text-sage-700">Submitted</span>
+            <span className="text-sage-400">→</span>
+            <span className="text-sage-700">Pending OSP</span>
+            <span className="text-sage-400">→</span>
+            <span className="text-sage-500 font-normal">Awaiting NoA</span>
+          </span>
           <div className="flex-1" />
           <button onClick={() => go('workspace')} className="text-[11px] underline">Edit Worksheet copy ↗</button>
         </div>
@@ -1868,19 +1915,28 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
 
               <div className="mt-7 grid grid-cols-3 gap-3 text-left">
                 <div className="border border-sage-100 bg-sage-50 rounded-xl p-4">
-                  <div className="text-[11px] text-sage-700 font-semibold uppercase tracking-widest">Done</div>
-                  <div className="mt-2 text-[13px] font-semibold text-ink">eGC1 submitted</div>
-                  <div className="text-[12px] text-mute mt-1">Department and OSP routing complete in this prototype.</div>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <span className="w-4 h-4 rounded-full bg-sage-600 text-white flex items-center justify-center text-[9px] font-bold">✓</span>
+                    <div className="text-[11px] text-sage-700 font-semibold uppercase tracking-widest">Step 1 · Done</div>
+                  </div>
+                  <div className="text-[13px] font-semibold text-ink">Submitted</div>
+                  <div className="text-[12px] text-mute mt-1">eGC1 submitted to Department for routing.</div>
                 </div>
                 <div className="border border-amber-bd bg-amber-50 rounded-xl p-4">
-                  <div className="text-[11px] text-amber-700 font-semibold uppercase tracking-widest">Waiting</div>
-                  <div className="mt-2 text-[13px] font-semibold text-ink">NoA approval</div>
-                  <div className="text-[12px] text-mute mt-1">Sponsor approval is pending before award reconciliation can begin.</div>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <span className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[9px] font-bold">⏳</span>
+                    <div className="text-[11px] text-amber-700 font-semibold uppercase tracking-widest">Step 2 · Active</div>
+                  </div>
+                  <div className="text-[13px] font-semibold text-ink">Pending OSP</div>
+                  <div className="text-[12px] text-mute mt-1">OSP is reviewing the budget before sponsor submission.</div>
                 </div>
                 <div className="border border-bdLt bg-surf2 rounded-xl p-4">
-                  <div className="text-[11px] text-sub font-semibold uppercase tracking-widest">Next</div>
-                  <div className="mt-2 text-[13px] font-semibold text-ink">Upload NoA</div>
-                  <div className="text-[12px] text-mute mt-1">Return to Awards once the Notice of Award is available.</div>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <span className="w-4 h-4 rounded-full bg-bd text-white flex items-center justify-center text-[9px] font-bold">○</span>
+                    <div className="text-[11px] text-sub font-semibold uppercase tracking-widest">Step 3 · Next</div>
+                  </div>
+                  <div className="text-[13px] font-semibold text-ink">Awaiting NoA</div>
+                  <div className="text-[12px] text-mute mt-1">Upload the Notice of Award once sponsor approval arrives.</div>
                 </div>
               </div>
 
@@ -1896,7 +1952,7 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
                 <Row k="eGC1" v="A224134 · Test 1" />
                 <Row k="SAGE Budget" v="B158116" />
                 <Row k="PI" v="Harry Potter" />
-                <Row k="Status" v="Waiting for NoA approval" highlight />
+                <Row k="Status" v="Submitted → Pending OSP → Awaiting NoA" highlight />
                 <Row k="Direct costs" v={`$${codeTotal.toLocaleString()}`} />
                 <Row k="Project total" v={`$${totals.total.toLocaleString()}`} highlight />
               </div>
@@ -2015,6 +2071,12 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
             </div>
             <div className="grid grid-cols-[80px_1fr_140px_140px] bg-page text-[13px]">
               <div className="px-3 py-2.5 border-r border-bdLt"></div>
+              <div className="px-3 py-2.5 border-r border-bdLt text-mute">Amount subject to F&A cost base (MTDC)</div>
+              <div className="px-3 py-2.5 border-r border-bdLt text-right tabular-nums text-mute">{totals.mtdcBase.toLocaleString()}</div>
+              <div className="px-3 py-2.5 text-right tabular-nums text-mute">{totals.mtdcBase.toLocaleString()}</div>
+            </div>
+            <div className="grid grid-cols-[80px_1fr_140px_140px] bg-page text-[13px]">
+              <div className="px-3 py-2.5 border-r border-bdLt"></div>
               <div className="px-3 py-2.5 border-r border-bdLt text-mute">F&A indirect costs (57.5% MTDC)</div>
               <div className="px-3 py-2.5 border-r border-bdLt text-right tabular-nums text-mute">{totals.fa.toLocaleString()}</div>
               <div className="px-3 py-2.5 text-right tabular-nums text-mute">{totals.fa.toLocaleString()}</div>
@@ -2036,8 +2098,8 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
         <div className="flex-1" />
         {egc1Submitted
           ? <>
-              <Button variant="secondary" onClick={() => toast('eGC1 already submitted. Waiting on sponsor.')}>
-                ✓ eGC1 submitted — awaiting NoA
+              <Button variant="secondary" onClick={() => toast('eGC1 submitted. Currently Pending OSP → Awaiting NoA.')}>
+                ✓ Submitted → Pending OSP → Awaiting NoA
               </Button>
               <Button variant="primary" onClick={() => go('budgets')} icon={<span>⌂</span>}>
                 Go to Home
@@ -2300,13 +2362,16 @@ function NoaSubStage({ toast, noaUploaded, setNoaUploaded, setAwardsStep, rows }
   )
 }
 
-function ReconcileSubStage({ go, toast, rows, setIssues, reconciliationActive, setReconciliationActive, setAwardsStep }: Nav) {
+function ReconcileSubStage({ go, toast, rows, setRows, setIssues, reconciliationActive, setReconciliationActive, setAwardsStep }: Nav) {
   const workspaceSum = totalsOf(rows).total
   const NOA_TOTAL = 267006
   const delta = NOA_TOTAL - workspaceSum
   const [piNotified, setPiNotified] = useState(false)
 
   function acknowledge() {
+    // If the worksheet is still blank, auto-populate so the user sees a filled budget
+    const isEmpty = !rows.some(r => r.label !== '' || r.amount || r.monthlySalary)
+    if (isEmpty) setRows(AI_PREFILL)
     setReconciliationActive(true)
     setIssues(() => INITIAL_ISSUES)
     toast('Reconciliation mode active. Worksheet will now show NoA mismatches.')
@@ -2314,40 +2379,42 @@ function ReconcileSubStage({ go, toast, rows, setIssues, reconciliationActive, s
   }
 
   return (
-    <div className="flex-1 overflow-auto p-8 max-w-[1100px] w-full space-y-5">
-      <div>
-        <h2 className="text-[22px] font-semibold">Award Reconciliation</h2>
-        <p className="text-[13px] text-mute mt-1">Compare the awarded total to your Worksheet draft. Acknowledge to switch the Worksheet into reconciliation mode.</p>
-      </div>
-      <AIDisclaimer />
-
-      <div className="bg-amber-50 border border-amber-bd rounded-lg p-4 flex items-start gap-3">
-        <span className="text-amber-700">⚠</span>
-        <p className="text-[13px] text-amber-700 leading-relaxed">
-          The awarded total differs from your Worksheet draft. Review the changes below before flipping the Worksheet into reconciliation mode.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white border border-bdLt rounded-lg p-5">
-          <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-3">Amount</div>
-          <Row k="Worksheet draft" v={`$${workspaceSum.toLocaleString()}`} />
-          <Row k="Awarded total (NoA)" v={`$${NOA_TOTAL.toLocaleString()}`} highlight />
-          <Row k={delta > 0 ? 'Surplus' : 'Over budget'} v={`${delta > 0 ? '+' : '−'} $${Math.abs(delta).toLocaleString()}`} tone={delta > 0 ? 'amber' : 'red'} />
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 overflow-auto p-8 max-w-[1100px] w-full space-y-5">
+        <div>
+          <h2 className="text-[22px] font-semibold">Award Reconciliation</h2>
+          <p className="text-[13px] text-mute mt-1">Compare the awarded total to your Worksheet draft. Acknowledge to switch the Worksheet into reconciliation mode.</p>
         </div>
-        <div className="bg-white border border-bdLt rounded-lg p-5">
-          <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-3">Dates</div>
-          <Row k="Proposed start" v="9/1/2023" />
-          <Row k="Awarded start (NoA)" v="3/1/2024" highlight />
-          <Row k="Impact" v="6-month delay — crosses July 1, FY24 rates apply" tone="amber" small />
-        </div>
-      </div>
+        <AIDisclaimer />
 
-      <div className="bg-white border border-bdLt rounded-lg p-5">
-        <h3 className="text-[14px] font-semibold mb-2">How would you like to proceed?</h3>
-        <p className="text-[13px] text-mute leading-relaxed">
-          Acknowledging this reconciliation will activate the NoA target in the Worksheet ($267,006) and surface row-level mismatches with the awarded budget. You can then revise the Worksheet to match.
-        </p>
+        <div className="bg-amber-50 border border-amber-bd rounded-lg p-4 flex items-start gap-3">
+          <span className="text-amber-700">⚠</span>
+          <p className="text-[13px] text-amber-700 leading-relaxed">
+            The awarded total differs from your Worksheet draft. Review the changes below before flipping the Worksheet into reconciliation mode.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-white border border-bdLt rounded-lg p-5">
+            <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-3">Amount</div>
+            <Row k="Worksheet draft" v={`$${workspaceSum.toLocaleString()}`} />
+            <Row k="Awarded total (NoA)" v={`$${NOA_TOTAL.toLocaleString()}`} highlight />
+            <Row k={delta > 0 ? 'Surplus' : 'Over budget'} v={`${delta > 0 ? '+' : '−'} $${Math.abs(delta).toLocaleString()}`} tone={delta > 0 ? 'amber' : 'red'} />
+          </div>
+          <div className="bg-white border border-bdLt rounded-lg p-5">
+            <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-3">Dates</div>
+            <Row k="Proposed start" v="9/1/2023" />
+            <Row k="Awarded start (NoA)" v="3/1/2024" highlight />
+            <Row k="Impact" v="6-month delay — crosses July 1, FY24 rates apply" tone="amber" small />
+          </div>
+        </div>
+
+        <div className="bg-white border border-bdLt rounded-lg p-5">
+          <h3 className="text-[14px] font-semibold mb-2">How would you like to proceed?</h3>
+          <p className="text-[13px] text-mute leading-relaxed">
+            Acknowledging this reconciliation will activate the NoA target in the Worksheet ($267,006) and surface row-level mismatches with the awarded budget. You can then revise the Worksheet to match.
+          </p>
+        </div>
       </div>
 
       <StickyCta hint="Award Reconciliation · Stage 2 of 3">
