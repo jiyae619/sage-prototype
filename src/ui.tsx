@@ -144,7 +144,7 @@ export function FeedbackToast({ show, message }: { show: boolean; message: strin
 
   return (
     <div
-      className={`fixed bottom-16 right-6 z-[60] transition-all duration-300 ${show ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}
+      className={`fixed bottom-16 right-6 z-[100] transition-all duration-300 ${show ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}
       role="status" aria-live="polite"
     >
       <div className="bg-sage-700 text-white px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 min-w-[320px] max-w-[420px]">

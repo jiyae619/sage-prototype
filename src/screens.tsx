@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, Fragment } from 'react'
 import {
   Button, Pill, ConfidenceChip, SourceTag,
   AIDisclaimer, Header, Footer,
@@ -65,6 +65,36 @@ const AI_PREFILL: WorkspaceRow[] = [
   { id: 'eq',     cellRef: 'F13', category: 'equipment', label: 'OCT Imaging Module', role: 'Heidelberg SPECTRALIS',     amount: 5000 },
   { id: 'tuit',   cellRef: 'F14', category: 'tuition',   label: 'Grad RA tuition',    role: '2 students · 3 quarters · OPB FY24', tuitionPerQuarter: 7257, numStudents: 2, months: 9, excludedFromMtdc: true },
   { id: 'fa',     cellRef: 'F15', category: 'fa',        label: 'F&A indirect costs', role: 'Auto · 57.5% MTDC',         faRate: 57.5, excludedFromMtdc: true },
+]
+
+// Past proposals — drives the "Check Proposal History" window
+type PastProposal = {
+  id: string
+  name: string
+  sponsor: string
+  grantManager: string
+  year: number
+  pi: string
+  rows: WorkspaceRow[]
+}
+
+// Build a distinct budget by scaling the monetary fields of the AI prefill set
+function scaleProposalRows(factor: number): WorkspaceRow[] {
+  return AI_PREFILL.map(r => ({
+    ...r,
+    monthlySalary:     r.monthlySalary     ? Math.round(r.monthlySalary * factor)     : r.monthlySalary,
+    amount:            r.amount            ? Math.round(r.amount * factor)            : r.amount,
+    tuitionPerQuarter: r.tuitionPerQuarter ? Math.round(r.tuitionPerQuarter * factor) : r.tuitionPerQuarter,
+  }))
+}
+
+const PAST_PROPOSALS: PastProposal[] = [
+  { id: 'p1', name: 'Retinal Imaging Biomarkers',     sponsor: 'NIH · NEI',                     grantManager: 'Rubeus Hagrid',    year: 2022, pi: 'Remus Lupin',        rows: scaleProposalRows(0.99) },
+  { id: 'p2', name: 'Glaucoma Progression Study',     sponsor: 'NIH · NEI',                     grantManager: 'Rubeus Hagrid',    year: 2023, pi: 'Alastor Moody',      rows: scaleProposalRows(1.02) },
+  { id: 'p3', name: 'Corneal Regeneration Trial',     sponsor: 'DoD CDMRP',                     grantManager: 'Pomona Sprout',    year: 2023, pi: 'Minerva McGonagall', rows: scaleProposalRows(0.97) },
+  { id: 'p4', name: 'Pediatric Myopia Screening',     sponsor: 'NSF',                           grantManager: 'Argus Filch',      year: 2022, pi: 'Severus Snape',      rows: scaleProposalRows(0.88) },
+  { id: 'p5', name: 'Macular Degeneration Cohort',    sponsor: 'NIH · NEI',                     grantManager: 'Dolores Umbridge', year: 2021, pi: 'Albus Dumbledore',   rows: scaleProposalRows(1.05) },
+  { id: 'p6', name: 'Diabetic Retinopathy AI Screen', sponsor: 'Research to Prevent Blindness', grantManager: 'Argus Filch',      year: 2024, pi: 'Pomona Sprout',      rows: scaleProposalRows(0.80) },
 ]
 
 // Role config — drives the right-panel dropdowns and the auto-populated values
@@ -270,6 +300,7 @@ export function WorkspaceScreen(props: Nav) {
   const [mismatchView, setMismatchView] = useState(false)
   const [piReviewOpen, setPiReviewOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [piReviewStatus, setPiReviewStatus] = useState<'idle'|'sent'|'approved'|'changes_requested'>('idle')
   const [personnelPanelRowId, setPersonnelPanelRowId] = useState<string | null>(null)
   const [aiThinking] = useState(false)
@@ -294,10 +325,16 @@ export function WorkspaceScreen(props: Nav) {
     toast('AI prefilled rows from 3 similar NIH R34 vision proposals.')
   }
 
-  function suggestProposedTotal() {
-    setProposedTotal(265000)
-    setProposedDraft('265000')
-    toast('AI suggested $265,000 from 3 similar NIH R34 vision proposals (median $263k, avg $268k).')
+  function copyProposalBudget(proposal: PastProposal) {
+    setRows(proposal.rows.map(r => ({ ...r })))
+    toast('Budget copied to the current budget.')
+  }
+
+  function copyProposalSection(sectionTitle: string, sectionRows: WorkspaceRow[]) {
+    // Only the copied section is populated — every other row is reset to blank.
+    const byId = new Map(sectionRows.map(r => [r.id, r]))
+    setRows(BLANK_ROWS.map(r => { const src = byId.get(r.id); return src ? { ...src } : { ...r } }))
+    toast(`${sectionTitle} has been copied to the current budget.`)
   }
 
   function updateRow(id: string, patch: Partial<WorkspaceRow>) {
@@ -472,7 +509,7 @@ export function WorkspaceScreen(props: Nav) {
             </span>
           </div>
         </> : (
-          <span className="text-mute">No target set — sum updates as you fill rows. <HoverTip label="AI suggestion rationale" tip={`Based on 3 similar past NIH R34 vision-research proposals from this department:\n\n• Lupin 2022 R34 — $263k (same mechanism, same dept)\n• Moody 2023 R34 — $271k (similar 4-PI structure)\n• McGonagall 2023 R34 — $258k (same sponsor IC)\n\nMedian $263k · Mean $268k. Excludes proposals with >50% subaward.`}><button onClick={suggestProposedTotal} className="text-purple-700 underline">Suggest from past proposals</button></HoverTip></span>
+          <span className="text-mute">No target set — sum updates as you fill rows. <button onClick={() => setHistoryOpen(true)} className="text-purple-700 underline">Check Proposal History</button></span>
         )}
         {reconciliationActive && issues.length > 0 && (
           <button onClick={() => openMismatch(0)}
@@ -916,6 +953,13 @@ export function WorkspaceScreen(props: Nav) {
         </div>
       </Modal>
 
+      <ProposalHistoryModal
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onCopy={copyProposalBudget}
+        onCopySection={copyProposalSection}
+      />
+
       <Footer
         summary={
           hasTarget ? (
@@ -930,6 +974,247 @@ export function WorkspaceScreen(props: Nav) {
           )
         }
       />
+    </div>
+  )
+}
+
+// =====================================================================
+// ProposalHistoryModal — browse past proposals and copy a full budget
+// =====================================================================
+
+function ProposalFilter({ label, value, onChange, options }: {
+  label: string; value: string; onChange: (v: string) => void; options: string[];
+}) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      aria-label={`Filter by ${label}`}
+      className="px-2 py-1 border border-bd rounded text-[12px] bg-white focus:outline-none focus:border-sage-500">
+      <option value="">All {label}</option>
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
+    </select>
+  )
+}
+
+function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
+  open: boolean;
+  onClose: () => void;
+  onCopy: (p: PastProposal) => void;
+  onCopySection: (sectionTitle: string, rows: WorkspaceRow[]) => void;
+}) {
+  const [fName, setFName] = useState('')
+  const [fSponsor, setFSponsor] = useState('')
+  const [fManager, setFManager] = useState('')
+  const [fYear, setFYear] = useState('')
+  const [fPi, setFPi] = useState('')
+  const [detail, setDetail] = useState<PastProposal | null>(null)
+
+  if (!open) return null
+
+  const uniq = (vals: (string | number)[]) => [...new Set(vals.map(String))]
+  const names    = uniq(PAST_PROPOSALS.map(p => p.name))
+  const sponsors = uniq(PAST_PROPOSALS.map(p => p.sponsor))
+  const managers = uniq(PAST_PROPOSALS.map(p => p.grantManager))
+  const years    = uniq(PAST_PROPOSALS.map(p => p.year)).sort()
+  const pis      = uniq(PAST_PROPOSALS.map(p => p.pi))
+  const hasFilter = !!(fName || fSponsor || fManager || fYear || fPi)
+
+  const filtered = PAST_PROPOSALS.filter(p =>
+    (!fName    || p.name === fName) &&
+    (!fSponsor || p.sponsor === fSponsor) &&
+    (!fManager || p.grantManager === fManager) &&
+    (!fYear    || String(p.year) === fYear) &&
+    (!fPi      || p.pi === fPi)
+  )
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Proposal History">
+        <button onClick={onClose} aria-label="Close modal" className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]" />
+        <div className="relative bg-card rounded-xl shadow-2xl w-[920px] max-w-full max-h-[88vh] flex flex-col">
+          <header className="px-5 py-4 border-b border-bdLt flex items-start">
+            <div className="flex-1">
+              <h3 className="text-[15px] font-semibold">Proposal History</h3>
+              <p className="text-[12px] text-mute mt-0.5">Click a proposal to open its budget, then copy it into your current worksheet.</p>
+            </div>
+            <button onClick={onClose} className="w-8 h-8 rounded-md flex items-center justify-center text-mute hover:bg-surf2" aria-label="Close">✕</button>
+          </header>
+
+          {/* Filters */}
+          <div className="px-5 py-3 border-b border-bdLt flex flex-wrap items-center gap-2.5 bg-page">
+            <span className="text-[10px] uppercase tracking-widest font-semibold text-sub mr-1">Filter</span>
+            <ProposalFilter label="Budget Name"   value={fName}    onChange={setFName}    options={names} />
+            <ProposalFilter label="Sponsor"       value={fSponsor} onChange={setFSponsor} options={sponsors} />
+            <ProposalFilter label="Grant Manager" value={fManager} onChange={setFManager} options={managers} />
+            <ProposalFilter label="Year"          value={fYear}    onChange={setFYear}    options={years} />
+            <ProposalFilter label="PI"            value={fPi}      onChange={setFPi}      options={pis} />
+            {hasFilter && (
+              <button onClick={() => { setFName(''); setFSponsor(''); setFManager(''); setFYear(''); setFPi('') }}
+                className="text-[11px] text-purple-700 underline">Clear filters</button>
+            )}
+          </div>
+
+          {/* Table */}
+          <div className="flex-1 overflow-auto">
+            <table className="w-full text-[12px] border-collapse">
+              <thead className="sticky top-0 bg-surf2 text-sub">
+                <tr className="text-left">
+                  <th className="px-4 py-2.5 font-semibold">Budget Name</th>
+                  <th className="px-4 py-2.5 font-semibold">Sponsor</th>
+                  <th className="px-4 py-2.5 font-semibold">Grant Manager</th>
+                  <th className="px-4 py-2.5 font-semibold">Year</th>
+                  <th className="px-4 py-2.5 font-semibold">PI</th>
+                  <th className="px-4 py-2.5 font-semibold text-right">Budget</th>
+                  <th className="px-4 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-mute">No proposals match these filters.</td></tr>
+                ) : filtered.map(p => (
+                  <tr key={p.id} onClick={() => setDetail(p)}
+                    className="border-t border-bdLt hover:bg-purple-100/40 cursor-pointer transition">
+                    <td className="px-4 py-2.5 font-semibold text-purple-700 underline">{p.name}</td>
+                    <td className="px-4 py-2.5">{p.sponsor}</td>
+                    <td className="px-4 py-2.5">{p.grantManager}</td>
+                    <td className="px-4 py-2.5 tabular-nums">{p.year}</td>
+                    <td className="px-4 py-2.5">{p.pi}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums font-semibold">${totalsOf(p.rows).total.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button onClick={e => { e.stopPropagation(); onCopy(p) }}
+                        className="px-3 py-1.5 rounded-md bg-purple-700 text-white text-[11px] font-semibold hover:opacity-90 transition">
+                        Copy budget
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <footer className="px-5 py-3 border-t border-bdLt flex items-center justify-between">
+            <span className="text-[11px] text-mute">{filtered.length} of {PAST_PROPOSALS.length} proposals</span>
+            <button onClick={onClose} className="px-4 py-2 border border-bd rounded-lg text-[13px] font-medium hover:bg-surf2 transition">Close</button>
+          </footer>
+        </div>
+      </div>
+
+      {detail && (
+        <ProposalDetailModal
+          proposal={detail}
+          onCopy={onCopy}
+          onCopySection={onCopySection}
+          onClose={() => setDetail(null)}
+        />
+      )}
+    </>
+  )
+}
+
+function ProposalDetailModal({ proposal, onCopy, onCopySection, onClose }: {
+  proposal: PastProposal;
+  onCopy: (p: PastProposal) => void;
+  onCopySection: (sectionTitle: string, rows: WorkspaceRow[]) => void;
+  onClose: () => void;
+}) {
+  const total = totalsOf(proposal.rows).total
+  const rowById = (id: string) => proposal.rows.find(r => r.id === id)
+
+  // Worksheet-style cell formatting — mirrors the Salary / % Effort / Months columns
+  const rateCell = (r: WorkspaceRow) => {
+    if (r.category === 'personnel') return r.monthlySalary ? `$${r.monthlySalary.toLocaleString()}/mo` : '—'
+    if (r.category === 'fringe')    return r.fringeRate != null ? `${r.fringeRate}%` : '—'
+    if (r.category === 'tuition')   return r.tuitionPerQuarter ? `$${r.tuitionPerQuarter.toLocaleString()}/qtr` : '—'
+    if (r.category === 'fa')        return r.faRate != null ? `${r.faRate}% MTDC` : '—'
+    return r.amount ? `$${r.amount.toLocaleString()}` : '—'
+  }
+  const effortCell = (r: WorkspaceRow) => {
+    if (r.category === 'personnel') return r.effortPct != null ? `${r.effortPct}%` : '—'
+    if (r.category === 'tuition')   return r.numStudents != null ? `${r.numStudents} stu` : '—'
+    return '—'
+  }
+  const monthsCell = (r: WorkspaceRow) =>
+    (r.category === 'personnel' || r.category === 'tuition') && r.months != null ? `${r.months}` : '—'
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={`${proposal.name} worksheet preview`}>
+      <button onClick={onClose} aria-label="Close modal" className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]" />
+      <div className="relative bg-card rounded-xl shadow-2xl w-[860px] max-w-full max-h-[88vh] flex flex-col">
+        <header className="px-5 py-4 border-b border-bdLt flex items-start">
+          <div className="flex-1">
+            <div className="text-[10px] uppercase tracking-widest font-semibold text-purple-700">Worksheet preview</div>
+            <h3 className="text-[15px] font-semibold mt-0.5">{proposal.name}</h3>
+            <p className="text-[12px] text-mute mt-0.5">
+              {proposal.sponsor} · PI {proposal.pi} · {proposal.year} · Grant Manager {proposal.grantManager}
+            </p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-md flex items-center justify-center text-mute hover:bg-surf2" aria-label="Close">✕</button>
+        </header>
+
+        <div className="px-5 py-2 bg-purple-100/40 border-b border-bdLt text-[11px] text-purple-700">
+          ✦ Preview only — copying loads these values into your editable worksheet.
+        </div>
+
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-[12px] border-collapse">
+            <thead className="sticky top-0 bg-surf2 text-sub">
+              <tr className="text-left">
+                <th className="px-3 py-2 font-semibold w-[52px]">Cell</th>
+                <th className="px-3 py-2 font-semibold">Description</th>
+                <th className="px-3 py-2 font-semibold">Role</th>
+                <th className="px-3 py-2 font-semibold text-right">Salary / Rate</th>
+                <th className="px-3 py-2 font-semibold text-right">% Effort</th>
+                <th className="px-3 py-2 font-semibold text-right">Months</th>
+                <th className="px-3 py-2 font-semibold text-right">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {SECTIONS.map(section => {
+                const secRows = section.ids.map(rowById).filter((r): r is WorkspaceRow => !!r)
+                if (secRows.length === 0) return null
+                return (
+                  <Fragment key={section.title}>
+                    <tr className="bg-page">
+                      <td colSpan={7} className="px-3 py-1.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-[10px] uppercase tracking-widest font-semibold text-sub">{section.title}</span>
+                          <button onClick={() => onCopySection(section.title, secRows)}
+                            className="px-2.5 py-1 rounded-md border border-purple-700/40 text-purple-700 text-[10px] font-semibold hover:bg-purple-100/60 transition shrink-0">
+                            Copy section
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {secRows.map(r => (
+                      <tr key={r.id} className="border-t border-bdLt">
+                        <td className="px-3 py-2 text-mute font-mono text-[10px]">{r.cellRef}</td>
+                        <td className="px-3 py-2">{r.label || <span className="text-sub italic">—</span>}</td>
+                        <td className="px-3 py-2 text-mute">{r.role || '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{rateCell(r)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{effortCell(r)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{monthsCell(r)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold">${computeSubtotal(r, proposal.rows).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <footer className="px-5 py-3.5 border-t border-bdLt flex items-center gap-3">
+          <span className="text-[13px] text-mute">Total budget</span>
+          <span className="text-[16px] font-semibold tabular-nums">${total.toLocaleString()}</span>
+          <div className="flex-1" />
+          <button onClick={onClose} className="px-4 py-2 border border-bd rounded-lg text-[13px] font-medium hover:bg-surf2 transition">Close</button>
+          <button onClick={() => onCopy(proposal)}
+            className="px-4 py-2 rounded-lg bg-purple-700 text-white text-[13px] font-semibold hover:opacity-90 transition">
+            Copy budget to worksheet
+          </button>
+        </footer>
+      </div>
     </div>
   )
 }
@@ -2431,7 +2716,7 @@ function AsrSubStage({ go, toast, rows, issues, reconciliationActive, setOpenBud
   const NOA_TOTAL = 267006
   const hasMismatch = issues.length > 0
   const blockSubmit = hasMismatch || !reconciliationActive
-  const [piSfiDone, setPiSfiDone] = useState(false)
+  const [piSfiDone] = useState(true)
   const [section, setSection] = useState<'summary'|'approvals'|'access'|'history'>('summary')
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     general: true, budget: true, sfi: true, attachments: true,
@@ -2698,15 +2983,8 @@ function AsrSubStage({ go, toast, rows, issues, reconciliationActive, setOpenBud
                 )}
                 <div className="flex-1" />
                 <Button variant="ghost" onClick={() => go('workspace')}>← Back to Worksheet</Button>
-                {hasMismatch ? (
-                  <Button variant="primary" onClick={() => go('workspace')}>Apply fix in Worksheet</Button>
-                ) : (
-                  <Button variant="secondary" onClick={() => { setTimeout(() => setPiSfiDone(true), 600); toast('SFI reminder sent to Dr. Potter.') }}>
-                    Send SFI reminder
-                  </Button>
-                )}
                 <Button variant={blockSubmit ? 'disabled' : 'primary'} onClick={submitAsr}>
-                  {hasMismatch ? 'Resolve mismatch first' : piSfiDone ? 'Submit ASR' : 'Submit — awaiting PI SFI'}
+                  Submit ASR
                 </Button>
               </div>
 
