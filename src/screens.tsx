@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import {
   Button, Pill, ConfidenceChip, SourceTag,
   AIDisclaimer, Header, Footer,
-  StickyCta, FloatingActionBar, FloatingBtn, FloatingAiAssistSwitch, Modal,
+  StickyCta, FloatingActionBar, FloatingBtn, Modal,
   MismatchPanel, ImportBlockerBanner,
   SubTabs, HoverTip,
   type Issue, type TabKey, type AwardsStep,
@@ -255,7 +255,7 @@ function Breadcrumb({ trail }: { trail: { label: string; onClick?: () => void }[
 
 export function WorkspaceScreen(props: Nav) {
   const {
-    go, goAwards, toast, aiOn, setAiOn,
+    go, goAwards, toast, aiOn,
     issues, setIssues, rows, setRows,
     proposedTotal, setProposedTotal,
     reconciliationActive, egc1Submitted,
@@ -272,7 +272,7 @@ export function WorkspaceScreen(props: Nav) {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [piReviewStatus, setPiReviewStatus] = useState<'idle'|'sent'|'approved'|'changes_requested'>('idle')
   const [personnelPanelRowId, setPersonnelPanelRowId] = useState<string | null>(null)
-  const [aiThinking, setAiThinking] = useState(false)
+  const [aiThinking] = useState(false)
   const [piComment, setPiComment] = useState('')
   const [proposedDraft, setProposedDraft] = useState('')
   const [raDepartmentId, setRaDepartmentId] = useState('')
@@ -302,18 +302,6 @@ export function WorkspaceScreen(props: Nav) {
 
   function updateRow(id: string, patch: Partial<WorkspaceRow>) {
     setRows(rows.map(r => r.id === id ? { ...r, ...patch } : r))
-  }
-
-  function toggleAiAssist(nextOn: boolean) {
-    if (nextOn && !aiOn) {
-      setAiThinking(true)
-      window.setTimeout(() => {
-        setAiOn(true)
-        setAiThinking(false)
-      }, 900)
-      return
-    }
-    setAiOn(nextOn)
   }
 
   function sendForPiReview() {
@@ -804,7 +792,6 @@ export function WorkspaceScreen(props: Nav) {
             issue={activeMismatch}
             issueIndex={mismatchIndex}
             issueTotal={issues.length}
-            currentTotal={totals.total}
             target={target}
             onApplyFix={applyMismatchFix}
             onAdjustManually={adjustManually}

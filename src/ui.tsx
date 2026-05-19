@@ -363,12 +363,11 @@ export function IssuesPanel({
 // Right-panel mismatch resolution UI — replaces the top issues banner
 // with a contextual deep-dive (per Figma frame 134:239)
 export function MismatchPanel({
-  issue, issueIndex, issueTotal, currentTotal, target, onApplyFix, onAdjustManually, onClose, onNext, onPrev,
+  issue, issueIndex, issueTotal, target, onApplyFix, onAdjustManually, onClose, onNext, onPrev,
 }: {
   issue: Issue;
   issueIndex: number;
   issueTotal: number;
-  currentTotal: number;
   target: number;
   onApplyFix: () => void;
   onAdjustManually: () => void;
@@ -376,8 +375,6 @@ export function MismatchPanel({
   onNext?: () => void;
   onPrev?: () => void;
 }) {
-  const diff = target - currentTotal
-
   // Mismatch-specific display content
   const mismatchTitles: Record<string, string> = {
     'iss-fa':     'Rounding mismatch',
