@@ -74,6 +74,8 @@ type PastProposal = {
   sponsor: string
   grantManager: string
   year: number
+  period: 1 | 2 | 3
+  submittedAt: string // ISO date — used for "Recent date" sort
   pi: string
   rows: WorkspaceRow[]
 }
@@ -125,12 +127,12 @@ function scaleRowsForPeriod(baseRows: WorkspaceRow[], period: 1 | 2 | 3): Worksp
 }
 
 const PAST_PROPOSALS: PastProposal[] = [
-  { id: 'p1', name: 'Retinal Imaging Biomarkers',     sponsor: 'NIH · NEI',                     grantManager: 'Rubeus Hagrid',    year: 2022, pi: 'Remus Lupin',        rows: scaleProposalRows(0.99) },
-  { id: 'p2', name: 'Glaucoma Progression Study',     sponsor: 'NIH · NEI',                     grantManager: 'Rubeus Hagrid',    year: 2023, pi: 'Alastor Moody',      rows: scaleProposalRows(1.02) },
-  { id: 'p3', name: 'Corneal Regeneration Trial',     sponsor: 'DoD CDMRP',                     grantManager: 'Pomona Sprout',    year: 2023, pi: 'Minerva McGonagall', rows: scaleProposalRows(0.97) },
-  { id: 'p4', name: 'Pediatric Myopia Screening',     sponsor: 'NSF',                           grantManager: 'Argus Filch',      year: 2022, pi: 'Severus Snape',      rows: scaleProposalRows(0.88) },
-  { id: 'p5', name: 'Macular Degeneration Cohort',    sponsor: 'NIH · NEI',                     grantManager: 'Dolores Umbridge', year: 2021, pi: 'Albus Dumbledore',   rows: scaleProposalRows(1.05) },
-  { id: 'p6', name: 'Diabetic Retinopathy AI Screen', sponsor: 'Research to Prevent Blindness', grantManager: 'Argus Filch',      year: 2024, pi: 'Pomona Sprout',      rows: scaleProposalRows(0.80) },
+  { id: 'p1', name: 'Retinal Imaging Biomarkers',     sponsor: 'NIH · NEI',                     grantManager: 'Rubeus Hagrid',    year: 2022, period: 2, submittedAt: '2022-03-14', pi: 'Remus Lupin',        rows: scaleProposalRows(0.99) },
+  { id: 'p2', name: 'Glaucoma Progression Study',     sponsor: 'NIH · NEI',                     grantManager: 'Rubeus Hagrid',    year: 2023, period: 1, submittedAt: '2023-10-02', pi: 'Alastor Moody',      rows: scaleProposalRows(1.02) },
+  { id: 'p3', name: 'Corneal Regeneration Trial',     sponsor: 'DoD CDMRP',                     grantManager: 'Pomona Sprout',    year: 2023, period: 3, submittedAt: '2023-06-21', pi: 'Minerva McGonagall', rows: scaleProposalRows(0.97) },
+  { id: 'p4', name: 'Pediatric Myopia Screening',     sponsor: 'NSF',                           grantManager: 'Argus Filch',      year: 2022, period: 1, submittedAt: '2022-09-08', pi: 'Severus Snape',      rows: scaleProposalRows(0.88) },
+  { id: 'p5', name: 'Macular Degeneration Cohort',    sponsor: 'NIH · NEI',                     grantManager: 'Dolores Umbridge', year: 2021, period: 2, submittedAt: '2021-11-30', pi: 'Albus Dumbledore',   rows: scaleProposalRows(1.05) },
+  { id: 'p6', name: 'Diabetic Retinopathy AI Screen', sponsor: 'Research to Prevent Blindness', grantManager: 'Argus Filch',      year: 2024, period: 1, submittedAt: '2024-04-17', pi: 'Pomona Sprout',      rows: scaleProposalRows(0.80) },
 ]
 
 // Role config — drives the right-panel dropdowns and the auto-populated values
@@ -364,7 +366,6 @@ export function WorkspaceScreen(props: Nav) {
   const [personnelPanelRowId, setPersonnelPanelRowId] = useState<string | null>(null)
   const [aiThinking] = useState(false)
   const [piComment, setPiComment] = useState('')
-  const [proposedDraft, setProposedDraft] = useState('')
   const [raDepartmentId, setRaDepartmentId] = useState('')
   const [mismatchIndex, setMismatchIndex] = useState(0)
   const raDepartment = UW_VARIABLE_RA_DEPARTMENTS.find(d => d.id === raDepartmentId) ?? UW_VARIABLE_RA_DEPARTMENTS[0]
@@ -429,7 +430,7 @@ export function WorkspaceScreen(props: Nav) {
     } else {
       setMismatchView(false)
       setMismatchIndex(0)
-      toast(`All mismatches resolved. Budget reconciled to $${NOA_TOTAL.toLocaleString()}.`)
+      toast(`All mismatches resolved. Budget aligned to $${NOA_TOTAL.toLocaleString()}.`)
     }
   }
   function adjustManually() {
@@ -442,9 +443,9 @@ export function WorkspaceScreen(props: Nav) {
     setSelectedRow(issues[idx]?.cellRef?.replace(/[^a-z0-9]/gi, '').toLowerCase() ?? 'fa')
   }
   function confirmUpload() {
-    // Open only the left-hand PDF preview; leave the right-hand panel state as-is.
+    // Open PDF preview, OCR-extract the invoice values, and auto-open the right
+    // panel so the extracted details appear as soon as the upload completes.
     setUploadOpen(false); setPdfOpen(true)
-    // OCR-extract: fill F13 worksheet text from the invoice
     setRows(rows.map(r => r.id === 'eq' ? {
       ...r,
       label: 'OCT Imaging Module',
@@ -452,6 +453,9 @@ export function WorkspaceScreen(props: Nav) {
       amount: 5000,
       autoPopulated: true,
     } : r))
+    setSelectedRow('eq')
+    setAddinOpen(true)
+    setMismatchView(false)
     toast('Equipment_Invoice_v1.pdf uploaded · F13 auto-populated from OCR. Approve in panel.')
   }
 
@@ -491,9 +495,9 @@ export function WorkspaceScreen(props: Nav) {
       {reconciliationActive && (
         <div className="bg-amber-50 border-b border-amber-bd px-6 py-2 flex items-center gap-3 text-[12px]">
           <span className="text-amber-700">⚠</span>
-          <span className="text-amber-700 font-medium">Reconciling against NoA — target $267,006 · NIH R34EY000000</span>
+          <span className="text-amber-700 font-medium">Resolving mismatch against NoA — target $267,006 · NIH R34EY000000</span>
           <div className="flex-1" />
-          <button onClick={() => goAwards('reconcile')} className="text-[11px] text-amber-700 underline">View reconciliation</button>
+          <button onClick={() => goAwards('reconcile')} className="text-[11px] text-amber-700 underline">View mismatches</button>
         </div>
       )}
 
@@ -526,7 +530,7 @@ export function WorkspaceScreen(props: Nav) {
             )
           ) : 'New Budget Worksheet · A224134'
         }
-        idChip={reconciliationActive ? 'Post-award · reconciling' : 'Pre-award draft'}
+        idChip={reconciliationActive ? 'Post-award · resolving mismatch' : 'Pre-award draft'}
         status={hasTarget ? `· target $${target.toLocaleString()}` : '· no target set'}
         totals={[
           { label: 'Direct Costs',  value: totals.directCosts > 0 ? `$${totals.directCosts.toLocaleString()}` : '—' },
@@ -538,9 +542,11 @@ export function WorkspaceScreen(props: Nav) {
 
       {/* Reconciliation bar (target awareness) */}
       <div className="bg-white border-b border-bdLt px-7 py-2.5 flex items-center gap-6 text-[12px]">
-        <span className="text-sub uppercase tracking-widest font-semibold whitespace-nowrap">
-          {reconciliationActive ? 'NoA Reconciliation' : 'Sum vs Proposed'}
-        </span>
+        {reconciliationActive && (
+          <span className="text-sub uppercase tracking-widest font-semibold whitespace-nowrap">
+            Resolve Mismatch
+          </span>
+        )}
         {hasTarget ? <>
           <div className="flex items-center gap-2 whitespace-nowrap">
             <span className="text-mute">Target</span>
@@ -559,16 +565,23 @@ export function WorkspaceScreen(props: Nav) {
             </span>
           </div>
         </> : (
-          <span className="text-mute">No target set — sum updates as you fill rows. <button onClick={() => setHistoryOpen(true)} className="text-purple-700 underline">Check Proposal History</button></span>
+          <button onClick={() => setHistoryOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-700 text-white text-[12px] font-semibold shadow-sm hover:bg-purple-800 transition">
+            <span aria-hidden>✦</span> Check Proposal History
+          </button>
         )}
         {reconciliationActive && issues.length > 0 && (
           <button onClick={() => openMismatch(0)}
-            className="ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-700 text-white text-[11px] font-semibold shadow-md hover:bg-amber-800 transition">
+            className="ml-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-red text-white text-[12px] font-bold shadow-[0_0_0_0_rgba(185,28,28,0.55)] hover:bg-red transition animate-mismatch-pulse">
             <span aria-hidden>⚠</span>
             {issues.length} mismatch{issues.length > 1 ? 'es' : ''} · Resolve →
           </button>
         )}
         <div className="flex-1" />
+        <span className="text-[10px] text-mute whitespace-nowrap">EyeConditions_Period1.xlsx</span>
+        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sage-50 text-[10px] text-sage-700 font-medium whitespace-nowrap">
+          <span className="w-1.5 h-1.5 rounded-full bg-sage-500" /> Autosaved 12s ago
+        </span>
       </div>
 
       {/* Workspace body */}
@@ -585,22 +598,6 @@ export function WorkspaceScreen(props: Nav) {
         <div className="flex-1 flex flex-col overflow-hidden bg-white" data-tutorial-target="workspace">
           {/* Setup row */}
           <div className="border-b border-bdLt bg-page px-5 py-3 flex items-center gap-5 text-[12px]">
-            <div className="flex items-center gap-2">
-              <span className="text-sub uppercase text-[10px] font-semibold tracking-widest">Proposed total</span>
-              <input
-                type="text"
-                value={proposedDraft || (proposedTotal ? proposedTotal.toLocaleString() : '')}
-                onChange={e => {
-                  const v = e.target.value.replace(/[^0-9]/g, '')
-                  setProposedDraft(v)
-                  setProposedTotal(Number(v) || 0)
-                }}
-                placeholder="$0"
-                disabled={reconciliationActive}
-                className="w-32 px-2.5 py-1 border border-bd rounded text-[13px] tabular-nums focus:outline-none focus:border-sage-500 disabled:bg-surf2 disabled:cursor-not-allowed"
-              />
-            </div>
-            <div className="h-5 w-px bg-bdLt" />
             <div className="flex items-center gap-2 min-w-0 max-w-[min(100%,280px)]">
               <HoverTip
                 label="Department rate table"
@@ -643,10 +640,6 @@ export function WorkspaceScreen(props: Nav) {
             <span className="text-sub">ƒx</span>
             <span className="text-ink truncate">{formulaFor(selectedRow, rows)}</span>
             <div className="flex-1" />
-            <span className="text-[10px] text-mute whitespace-nowrap">EyeConditions_Period1.xlsx</span>
-            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sage-50 text-[10px] text-sage-700 font-medium whitespace-nowrap">
-              <span className="w-1.5 h-1.5 rounded-full bg-sage-500" /> Autosaved 12s ago
-            </span>
           </div>
 
           {/* Column headers */}
@@ -654,8 +647,8 @@ export function WorkspaceScreen(props: Nav) {
             <div className="border-r border-bdLt flex items-center justify-center">A</div>
             <div className="px-2 border-r border-bdLt flex items-center">Description</div>
             <div className="px-2 border-r border-bdLt flex items-center">Role</div>
-            <div className="px-2 border-r border-bdLt flex items-center justify-end">Salary/Rate</div>
-            <div className="px-2 border-r border-bdLt flex items-center justify-end">%</div>
+            <div className="px-2 border-r border-bdLt flex items-center justify-end">Salary</div>
+            <div className="px-2 border-r border-bdLt flex items-center justify-end">FTE</div>
             <div className="px-2 border-r border-bdLt flex items-center justify-end">Mo</div>
             <div className="px-2 border-r border-bdLt flex items-center justify-end">Subtotal</div>
             <div className="px-2 flex items-center">Source / Note</div>
@@ -665,10 +658,12 @@ export function WorkspaceScreen(props: Nav) {
           <div className="flex-1 overflow-auto">
             {SECTIONS.map(section => {
               const sectionRows = rows.filter(r => section.ids.includes(r.id))
+              const sectionLetter = section.title.split('.')[0]
+              const sectionSubtotal = sectionRows.reduce((sum, r) => sum + computeSubtotal(r, rows), 0)
               return (
                 <div key={section.title}>
                   <div className="grid grid-cols-[40px_1fr] bg-sage-50 border-b border-bdLt h-7 items-center text-[11px] text-sage-700 font-semibold">
-                    <div className="border-r border-bdLt h-full flex items-center justify-center text-mute">{section.title.split('.')[0]}</div>
+                    <div className="border-r border-bdLt h-full flex items-center justify-center text-mute">{sectionLetter}</div>
                     <div className="px-2">{section.title}</div>
                   </div>
                   {sectionRows.map(r => {
@@ -831,6 +826,21 @@ export function WorkspaceScreen(props: Nav) {
                       </div>
                     )
                   })}
+                  {/* Section subtotal — same 8-col grid as header/body for exact alignment */}
+                  <div className="grid grid-cols-[40px_minmax(220px,1.4fr)_minmax(150px,1fr)_100px_60px_60px_100px_120px] border-b border-bdLt h-8 text-[11px] bg-sage-50/40">
+                    <div className="border-r border-bdLt h-full flex items-center justify-center text-sage-700 font-semibold text-[10px]">{sectionLetter}</div>
+                    <div className="px-2 border-r border-bdLt flex items-center text-sage-700 font-semibold uppercase tracking-widest text-[10px] truncate">
+                      Subtotal · {section.title.split('.').slice(1).join('.').trim()}
+                    </div>
+                    <div className="border-r border-bdLt" />
+                    <div className="border-r border-bdLt" />
+                    <div className="border-r border-bdLt" />
+                    <div className="border-r border-bdLt" />
+                    <div className="px-2 border-r border-bdLt flex items-center justify-end tabular-nums font-bold text-sage-800">
+                      {sectionSubtotal > 0 ? `$${sectionSubtotal.toLocaleString()}` : '—'}
+                    </div>
+                    <div />
+                  </div>
                 </div>
               )
             })}
@@ -930,7 +940,6 @@ export function WorkspaceScreen(props: Nav) {
                   setMismatchView(false)
                   setSelectedRow(null)
                 }}
-                onUpload={() => setUploadOpen(true)}
                 onClose={() => setAddinOpen(false)}
               />
             )
@@ -943,13 +952,14 @@ export function WorkspaceScreen(props: Nav) {
               onClose={() => setAddinOpen(false)}
               onVerify={verifyRow}
               onUpdate={updateRow}
-              toast={toast}
             />
           )
         })()}
 
         {/* Floating action bar */}
         <FloatingActionBar>
+          <FloatingBtn tooltip="Upload supporting documents" onClick={() => setUploadOpen(true)} icon={<UploadIcon />} label="Attachments" tutorialTarget="upload-button" />
+          <span className="w-px h-6 bg-bd mx-1 shrink-0" aria-hidden />
           <FloatingBtn tooltip="Send to PI for review" onClick={sendForPiReview} icon={<SendReviewIcon />} label="PI Review" tutorialTarget="pi-review-button" />
           <span className="w-px h-6 bg-bd mx-1 shrink-0" aria-hidden />
           {!egc1Submitted ? (
@@ -1053,6 +1063,8 @@ function ProposalFilter({ label, value, onChange, options }: {
   )
 }
 
+type ProposalSort = 'recent' | 'budget' | 'pi'
+
 function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
   open: boolean;
   onClose: () => void;
@@ -1061,9 +1073,9 @@ function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
 }) {
   const [fName, setFName] = useState('')
   const [fSponsor, setFSponsor] = useState('')
-  const [fManager, setFManager] = useState('')
   const [fYear, setFYear] = useState('')
   const [fPi, setFPi] = useState('')
+  const [sortBy, setSortBy] = useState<ProposalSort>('recent')
   const [detail, setDetail] = useState<PastProposal | null>(null)
 
   if (!open) return null
@@ -1071,18 +1083,22 @@ function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
   const uniq = (vals: (string | number)[]) => [...new Set(vals.map(String))]
   const names    = uniq(PAST_PROPOSALS.map(p => p.name))
   const sponsors = uniq(PAST_PROPOSALS.map(p => p.sponsor))
-  const managers = uniq(PAST_PROPOSALS.map(p => p.grantManager))
   const years    = uniq(PAST_PROPOSALS.map(p => p.year)).sort()
   const pis      = uniq(PAST_PROPOSALS.map(p => p.pi))
-  const hasFilter = !!(fName || fSponsor || fManager || fYear || fPi)
+  const hasFilter = !!(fName || fSponsor || fYear || fPi)
 
   const filtered = PAST_PROPOSALS.filter(p =>
     (!fName    || p.name === fName) &&
     (!fSponsor || p.sponsor === fSponsor) &&
-    (!fManager || p.grantManager === fManager) &&
     (!fYear    || String(p.year) === fYear) &&
     (!fPi      || p.pi === fPi)
   )
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === 'recent') return b.submittedAt.localeCompare(a.submittedAt)
+    if (sortBy === 'budget') return totalsOf(b.rows).total - totalsOf(a.rows).total
+    return a.pi.localeCompare(b.pi)
+  })
 
   return (
     <>
@@ -1091,24 +1107,37 @@ function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
         <div className="relative bg-card rounded-xl shadow-2xl w-[920px] max-w-full max-h-[88vh] flex flex-col">
           <header className="px-5 py-4 border-b border-bdLt flex items-start">
             <div className="flex-1">
-              <h3 className="text-[15px] font-semibold">Proposal History</h3>
+              <div className="flex items-baseline gap-2">
+                <h3 className="text-[15px] font-semibold">Proposal History</h3>
+                <span className="text-[11px] text-mute">{sorted.length} of {PAST_PROPOSALS.length} proposals</span>
+              </div>
               <p className="text-[12px] text-mute mt-0.5">Click a proposal to open its budget, then copy it into your current worksheet.</p>
             </div>
             <button onClick={onClose} className="w-8 h-8 rounded-md flex items-center justify-center text-mute hover:bg-surf2" aria-label="Close">✕</button>
           </header>
 
-          {/* Filters */}
-          <div className="px-5 py-3 border-b border-bdLt flex flex-wrap items-center gap-2.5 bg-page">
-            <span className="text-[10px] uppercase tracking-widest font-semibold text-sub mr-1">Filter</span>
-            <ProposalFilter label="Budget Name"   value={fName}    onChange={setFName}    options={names} />
-            <ProposalFilter label="Sponsor"       value={fSponsor} onChange={setFSponsor} options={sponsors} />
-            <ProposalFilter label="Grant Manager" value={fManager} onChange={setFManager} options={managers} />
-            <ProposalFilter label="Year"          value={fYear}    onChange={setFYear}    options={years} />
-            <ProposalFilter label="PI"            value={fPi}      onChange={setFPi}      options={pis} />
+          {/* Filters + sort */}
+          <div className="px-5 py-3 border-b border-bdLt bg-page flex items-center gap-2.5">
+            <span className="text-[10px] uppercase tracking-widest font-semibold text-sub shrink-0">Filter</span>
+            <ProposalFilter label="Budget Name" value={fName}    onChange={setFName}    options={names} />
+            <ProposalFilter label="Sponsor"     value={fSponsor} onChange={setFSponsor} options={sponsors} />
+            <ProposalFilter label="Year"        value={fYear}    onChange={setFYear}    options={years} />
+            <ProposalFilter label="PI"          value={fPi}      onChange={setFPi}      options={pis} />
             {hasFilter && (
-              <button onClick={() => { setFName(''); setFSponsor(''); setFManager(''); setFYear(''); setFPi('') }}
-                className="text-[11px] text-purple-700 underline">Clear filters</button>
+              <button onClick={() => { setFName(''); setFSponsor(''); setFYear(''); setFPi('') }}
+                className="text-[11px] text-purple-700 underline shrink-0">Clear</button>
             )}
+            <div className="flex-1" />
+            <span className="text-[10px] uppercase tracking-widest font-semibold text-sub shrink-0">Sort by</span>
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as ProposalSort)}
+              aria-label="Sort proposals by"
+              className="px-2 py-1 border border-bd rounded text-[12px] bg-white focus:outline-none focus:border-sage-500 shrink-0">
+              <option value="recent">Recent date</option>
+              <option value="budget">Budget amount</option>
+              <option value="pi">PI name (A–Z)</option>
+            </select>
           </div>
 
           {/* Table */}
@@ -1118,24 +1147,22 @@ function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
                 <tr className="text-left">
                   <th className="px-4 py-2.5 font-semibold">Budget Name</th>
                   <th className="px-4 py-2.5 font-semibold">Sponsor</th>
-                  <th className="px-4 py-2.5 font-semibold">Grant Manager</th>
-                  <th className="px-4 py-2.5 font-semibold">Year</th>
                   <th className="px-4 py-2.5 font-semibold">PI</th>
+                  <th className="px-4 py-2.5 font-semibold">Proposed Year</th>
                   <th className="px-4 py-2.5 font-semibold text-right">Budget</th>
                   <th className="px-4 py-2.5" />
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
-                  <tr><td colSpan={7} className="px-4 py-10 text-center text-mute">No proposals match these filters.</td></tr>
-                ) : filtered.map(p => (
+                {sorted.length === 0 ? (
+                  <tr><td colSpan={6} className="px-4 py-10 text-center text-mute">No proposals match these filters.</td></tr>
+                ) : sorted.map(p => (
                   <tr key={p.id} onClick={() => setDetail(p)}
                     className="border-t border-bdLt hover:bg-purple-100/40 cursor-pointer transition">
                     <td className="px-4 py-2.5 font-semibold text-purple-700 underline">{p.name}</td>
                     <td className="px-4 py-2.5">{p.sponsor}</td>
-                    <td className="px-4 py-2.5">{p.grantManager}</td>
-                    <td className="px-4 py-2.5 tabular-nums">{p.year}</td>
                     <td className="px-4 py-2.5">{p.pi}</td>
+                    <td className="px-4 py-2.5 tabular-nums">{p.year}, Period {p.period}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums font-semibold">${totalsOf(p.rows).total.toLocaleString()}</td>
                     <td className="px-4 py-2.5 text-right">
                       <button onClick={e => { e.stopPropagation(); onCopy(p.rows) }}
@@ -1148,11 +1175,6 @@ function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
               </tbody>
             </table>
           </div>
-
-          <footer className="px-5 py-3 border-t border-bdLt flex items-center justify-between">
-            <span className="text-[11px] text-mute">{filtered.length} of {PAST_PROPOSALS.length} proposals</span>
-            <button onClick={onClose} className="px-4 py-2 border border-bd rounded-lg text-[13px] font-medium hover:bg-surf2 transition">Close</button>
-          </footer>
         </div>
       </div>
 
@@ -1225,17 +1247,12 @@ function ProposalDetailModal({ proposal, onCopy, onCopySection, onClose }: {
                 role="tab"
                 aria-selected={active}
                 onClick={() => setPeriod(p)}
-                className={`group inline-flex items-center gap-2 px-4 py-2 rounded-t-lg border border-b-0 -mb-px transition ${
+                className={`group inline-flex items-center px-4 py-2 rounded-t-lg border border-b-0 -mb-px transition text-[13px] font-semibold tracking-tight ${
                   active
                     ? 'bg-card border-bdLt text-purple-700 shadow-[0_-1px_0_0_var(--tw-shadow-color)] shadow-purple-700'
                     : 'bg-transparent border-transparent text-mute hover:bg-card/60 hover:text-ink'
                 }`}>
-                <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold transition ${
-                  active ? 'bg-purple-700 text-white' : 'bg-bdLt text-mute group-hover:bg-bd group-hover:text-ink'
-                }`}>
-                  {p}
-                </span>
-                <span className="text-[13px] font-semibold tracking-tight">Period</span>
+                Period {p}
               </button>
             )
           })}
@@ -1488,11 +1505,10 @@ function formulaFor(id: string | null, rows: WorkspaceRow[]): string {
 // SAGE ADD-IN — context panel for selected row
 // =====================================================================
 
-function SageAddIn({ row, allRows, pdfOpen, onClose, onVerify, onUpdate, toast }: {
+function SageAddIn({ row, allRows, pdfOpen, onClose, onVerify, onUpdate }: {
   row?: WorkspaceRow; allRows: WorkspaceRow[]; pdfOpen: boolean;
   onClose: () => void; onVerify: (id: string) => void;
   onUpdate: (id: string, patch: Partial<WorkspaceRow>) => void;
-  toast: (m: string) => void;
 }) {
   if (!row) return null
   const sub = computeSubtotal(row, allRows)
@@ -1531,13 +1547,9 @@ function SageAddIn({ row, allRows, pdfOpen, onClose, onVerify, onUpdate, toast }
             <Stat k="SAGE object code" v="05-00 Supplies" sub="Suggested by AI" />
 
             {row.autoPopulated && !row.verified && (
-              <div className="flex gap-2 pt-2">
-                <button onClick={() => { toast('Edit the F13 cell to correct the auto-populated values.') }}
-                  className="flex-1 px-3 py-2 border border-bd rounded-lg text-[12px] font-medium hover:bg-surf2">
-                  Correct
-                </button>
+              <div className="pt-2">
                 <button onClick={() => onVerify(row.id)}
-                  className="flex-1 px-3 py-2 bg-purple-700 text-white rounded-lg text-[12px] font-semibold hover:opacity-90">
+                  className="w-full px-3 py-2 bg-purple-700 text-white rounded-lg text-[12px] font-semibold hover:opacity-90">
                   Approve
                 </button>
               </div>
@@ -1631,11 +1643,10 @@ function Stat({ k, v, sub, confidence, source }: { k: string; v: string; sub?: s
 // PersonnelPanel — new right-panel design (matches the user's reference)
 // =====================================================================
 
-function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onUpload, onClose }: {
+function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
   row: WorkspaceRow; allRows: WorkspaceRow[]; period: number;
   onUpdate: (id: string, patch: Partial<WorkspaceRow>) => void;
   onVerify: (id: string) => void;
-  onUpload: () => void;
   onClose: () => void;
 }) {
   const sub = computeSubtotal(row, allRows)
@@ -1672,7 +1683,9 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onUpload, on
 
   return (
     <aside className="w-[420px] bg-white border-l border-bdLt flex flex-col overflow-hidden shrink-0 animate-[slideInRight_220ms_ease-out]">
-      <PanelHeader period={period} subtotal={sub} onClose={onClose} />
+      <PanelHeader period={period} subtotal={sub} onClose={onClose}
+        description={row.label || undefined}
+        role={row.role || (row.roleType ? row.roleType.replace(/-/g, ' ') : undefined)} />
 
       <div className="flex-1 overflow-auto px-5 py-5 space-y-4">
         {/* Cascade toggle */}
@@ -1694,7 +1707,6 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onUpload, on
         {row.roleType !== 'Other' && (
           <div className="grid grid-cols-2 gap-3">
             <DropField label="POSITION TYPE" value={cfg.posType} options={cfg.posTypes} />
-            <DropField label="SCHEDULE"      value={cfg.sched}   options={cfg.schedules} />
             <DropField label="LEVEL"         value={cfg.level}   options={cfg.levels} />
             <DropField label="BASE FTE"      value={fteValue}    options={cfg.ftes}
               onChange={v => onUpdate(row.id, { effortPct: Number(v.replace(/[^0-9]/g, '')) || 0 })} />
@@ -1804,7 +1816,7 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onUpload, on
               <span className="w-4 h-4 rounded-full bg-purple-700 text-white text-[9px] flex items-center justify-center">✓</span>
               Auto-Populated from UW Sources
             </span>
-            <a href={cfg.sourceUrl} target="_blank" rel="noopener noreferrer"
+            <a href="https://www.washington.edu/opb/uw-budget/compensation/" target="_blank" rel="noopener noreferrer"
               className="text-[11px] text-purple-700 underline inline-flex items-center gap-1">
               Check website <span>↗</span>
             </a>
@@ -1837,20 +1849,25 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onUpload, on
         </div>
         )}
 
-        {/* Editable inputs */}
-        <Field2 label="MONTHLY BASE SALARY" prefix="$"
-          value={row.monthlySalary}
-          onChange={v => onUpdate(row.id, { monthlySalary: v })}
-          placeholder={cfg.monthlySalary.toString()} />
+        {/* Editable inputs — monthly base + inflation on the same row */}
+        <div className="grid grid-cols-2 gap-3">
+          <Field2 label="MONTHLY BASE SALARY" prefix="$"
+            value={row.monthlySalary}
+            onChange={v => onUpdate(row.id, { monthlySalary: v })}
+            placeholder={cfg.monthlySalary.toString()} />
 
-        <Field2 label="INFLATION RATE" suffix="%"
-          value={row.inflationRate ?? 0}
-          onChange={v => onUpdate(row.id, { inflationRate: v })} />
+          <Field2 label="INFLATION RATE" suffix="%"
+            value={row.inflationRate ?? 0}
+            onChange={v => onUpdate(row.id, { inflationRate: v })} />
+        </div>
 
         <div>
           <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-1">Adjusted Monthly Base Salary</div>
           <div className="text-[16px] font-semibold tabular-nums">${adjusted.toLocaleString()}</div>
         </div>
+
+        {/* Schedule — calendar months vs academic quarters */}
+        <AppointmentBasis />
 
         {/* F&A / Indirect Costs */}
         <div className="border border-bdLt rounded-md px-3.5 py-3 space-y-2.5">
@@ -1880,35 +1897,36 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onUpload, on
       </div>
 
       {/* Footer */}
-      <div className="border-t border-bdLt px-5 py-3 flex items-center gap-3">
-        <button onClick={onClose}
-          className="flex-1 px-4 py-2.5 border border-bd rounded-lg text-[13px] font-medium hover:bg-surf2 transition">
-          Cancel
-        </button>
-        <button onClick={onUpload}
-          data-tutorial-target="upload-button"
-          title="Upload supporting documents"
-          className="flex-1 px-4 py-2.5 border border-sage-600 text-sage-700 rounded-lg text-[13px] font-semibold hover:bg-sage-50 transition inline-flex items-center justify-center gap-1.5">
-          <UploadIcon /> Upload
-        </button>
+      <div className="border-t border-bdLt px-5 py-3">
         <button onClick={() => onVerify(row.id)}
           data-tutorial-target="role-period-update"
-          className="flex-1 px-4 py-2.5 bg-purple-700 text-white rounded-lg text-[13px] font-semibold hover:opacity-90 transition">
-          {row.autoPopulated && !row.verified ? 'Approve' : 'Save to Budget'}
+          className="w-full px-4 py-2.5 bg-purple-700 text-white rounded-lg text-[13px] font-semibold hover:opacity-90 transition">
+          {row.autoPopulated && !row.verified ? 'Approve' : 'Apply'}
         </button>
       </div>
     </aside>
   )
 }
 
-function PanelHeader({ period, subtotal, onClose }: { period: number; subtotal: number; onClose: () => void }) {
+function PanelHeader({ period, subtotal, onClose, description, role }: {
+  period: number; subtotal: number; onClose: () => void;
+  description?: string; role?: string;
+}) {
   return (
-    <div className="bg-surf2 px-5 py-4 flex items-start justify-between border-b border-bdLt">
-      <div>
-        <div className="text-[20px] font-semibold leading-tight text-ink">Period {period}</div>
-        <div className="text-[16px] font-semibold tabular-nums text-ink mt-1">${subtotal.toLocaleString()}</div>
+    <div className="bg-surf2 px-5 py-4 flex items-start justify-between border-b border-bdLt gap-3">
+      <div className="min-w-0">
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <span className="text-[20px] font-semibold leading-tight text-ink">Period {period}</span>
+          <span className="text-[16px] font-semibold tabular-nums text-ink">${subtotal.toLocaleString()}</span>
+        </div>
+        {(description || role) && (
+          <div className="mt-1.5 space-y-0.5">
+            {description && <div className="text-[13px] font-medium text-ink truncate">{description}</div>}
+            {role && <div className="text-[11px] text-mute truncate">{role}</div>}
+          </div>
+        )}
       </div>
-      <button onClick={onClose} className="w-7 h-7 flex items-center justify-center text-sub hover:text-ink text-[18px]" aria-label="Close">✕</button>
+      <button onClick={onClose} className="w-7 h-7 flex items-center justify-center text-sub hover:text-ink text-[18px] shrink-0" aria-label="Close">✕</button>
     </div>
   )
 }
@@ -1930,6 +1948,79 @@ function DropField({ label, value, options, onChange }: { label: string; value: 
         className="w-full px-2.5 py-2 border border-bd rounded-md text-[12px] focus:outline-none focus:border-sage-500 bg-white">
         {options.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
+    </div>
+  )
+}
+
+function AppointmentBasis() {
+  const [basis, setBasis] = useState<'calendar' | 'quarter'>('calendar')
+  const [calendarMonths, setCalendarMonths] = useState(9)
+  const [academicQuarters, setAcademicQuarters] = useState(3)
+  const [summerQuarter, setSummerQuarter] = useState(0)
+
+  return (
+    <div className="space-y-3">
+      <div className="text-[10px] text-sub uppercase tracking-widest font-semibold">Schedule</div>
+
+      {/* Toggle */}
+      <div className="grid grid-cols-2 rounded-lg border border-bdLt overflow-hidden text-[12px]">
+        <button onClick={() => setBasis('calendar')}
+          className={`px-3 py-2 font-medium transition ${basis === 'calendar' ? 'bg-purple-700 text-white' : 'bg-white text-mute hover:bg-surf2'}`}>
+          Calendar months
+        </button>
+        <button onClick={() => setBasis('quarter')}
+          className={`px-3 py-2 font-medium transition border-l border-bdLt ${basis === 'quarter' ? 'bg-purple-700 text-white' : 'bg-white text-mute hover:bg-surf2'}`}>
+          Academic quarters
+        </button>
+      </div>
+
+      {basis === 'calendar' ? (
+        <div>
+          <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-1">Months</div>
+          <div className="flex items-center border border-bd rounded-md px-2.5 py-2 bg-white">
+            <input
+              type="number"
+              min={0} max={12} step={1}
+              value={calendarMonths}
+              onChange={e => setCalendarMonths(Math.max(0, Math.min(12, Number(e.target.value) || 0)))}
+              className="flex-1 outline-none text-[13px] tabular-nums bg-transparent"
+            />
+            <span className="text-mute text-[11px] ml-1.5">/ 12</span>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-1">Academic quarters</div>
+            <div className="flex items-center border border-bd rounded-md px-2.5 py-2 bg-white">
+              <input
+                type="number"
+                min={0} max={3} step={1}
+                value={academicQuarters}
+                onChange={e => setAcademicQuarters(Math.max(0, Math.min(3, Number(e.target.value) || 0)))}
+                className="flex-1 outline-none text-[13px] tabular-nums bg-transparent"
+              />
+              <span className="text-mute text-[11px] ml-1.5">/ 3</span>
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-1">Summer quarter</div>
+            <div className="flex items-center border border-bd rounded-md px-2.5 py-2 bg-white">
+              <input
+                type="number"
+                min={0} max={1} step={1}
+                value={summerQuarter}
+                onChange={e => setSummerQuarter(Math.max(0, Math.min(1, Number(e.target.value) || 0)))}
+                className="flex-1 outline-none text-[13px] tabular-nums bg-transparent"
+              />
+              <span className="text-mute text-[11px] ml-1.5">/ 1</span>
+            </div>
+          </div>
+          <div className="col-span-2 text-[11px] text-mute leading-relaxed">
+            Summer quarter is paid at a separate rate from academic-year quarters — grad RA limit caps at 50% effort per quarter.
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1960,7 +2051,6 @@ function Field2({ label, prefix, suffix, value, onChange, placeholder }: {
 // =====================================================================
 
 function PdfPreviewPanel({ amount, onAmountChange, onClose }: { amount: number; onAmountChange: (amount: number) => void; onClose: () => void }) {
-  const [view, setView] = useState<'extract' | 'document'>('extract')
   const [draftAmount, setDraftAmount] = useState(String(amount))
   const [validated, setValidated] = useState(false)
 
@@ -1979,48 +2069,8 @@ function PdfPreviewPanel({ amount, onAmountChange, onClose }: { amount: number; 
         <div className="flex-1" />
         <button onClick={onClose} className="text-sub hover:text-ink">✕</button>
       </div>
-      <div className="px-4 pb-2">
-        <div className="grid grid-cols-2 rounded-lg border border-bdLt bg-white overflow-hidden text-[11px]">
-          <button
-            onClick={() => setView('extract')}
-            className={`px-2.5 py-1.5 font-semibold transition ${view === 'extract' ? 'bg-amber-50 text-amber-700' : 'text-mute hover:bg-surf2'}`}
-          >
-            Extracted
-          </button>
-          <button
-            onClick={() => setView('document')}
-            className={`px-2.5 py-1.5 font-semibold border-l border-bdLt transition ${view === 'document' ? 'bg-amber-50 text-amber-700' : 'text-mute hover:bg-surf2'}`}
-          >
-            Document
-          </button>
-        </div>
-      </div>
       <div className="px-4 pb-4 flex-1 overflow-auto space-y-3">
-        {view === 'extract' ? (
-          <div className="bg-white border-2 border-amber-bd rounded p-4 space-y-3">
-            <div className="flex items-center">
-              <div className="leading-tight">
-                <div className="text-[12px] font-bold">HEIDELBERG</div>
-                <div className="text-[12px] font-bold">ENGINEERING</div>
-                <div className="text-[10px] text-sub font-medium">INC.</div>
-              </div>
-              <div className="flex-1" />
-              <div className="text-[16px] font-bold">INVOICE</div>
-            </div>
-            <p className="text-[9px] text-sub leading-relaxed">10 Forge Parkway<br/>Suite 200<br/>Franklin, MA 02038</p>
-            <div className="bg-yellow-hi border-2 border-amber-bd rounded px-2 py-2 flex items-center gap-2">
-              <div className="flex-1">
-                <div className="text-[10px] font-semibold">SPECTRALIS OCT Imaging Module</div>
-                <div className="text-[9px] text-sub">Multimodal eye-imaging adapter</div>
-              </div>
-              <span className="text-[11px] font-bold">${amount.toLocaleString()}.00</span>
-            </div>
-            <div className="bg-yellow-hi border border-amber-bd rounded-full inline-flex items-center px-2.5 py-1 text-[9px] font-medium text-amber-700">
-              → Linked to Excel row 13 · Equipment
-            </div>
-          </div>
-        ) : (
-          <div className="bg-white border border-bdLt rounded-lg overflow-hidden shadow-sm">
+        <div className="bg-white border border-bdLt rounded-lg overflow-hidden shadow-sm">
             <div className="bg-surf2 border-b border-bdLt px-3 py-2 flex items-center justify-between">
               <span className="text-[10px] uppercase tracking-widest font-semibold text-sub">Page preview</span>
               <span className="text-[10px] text-mute">1 / 1</span>
@@ -2055,7 +2105,6 @@ function PdfPreviewPanel({ amount, onAmountChange, onClose }: { amount: number; 
               <div className="absolute bottom-5 right-5 text-[10px] font-bold">Total ${amount.toLocaleString()}.00</div>
             </div>
           </div>
-        )}
 
         <div className="bg-white border border-bdLt rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between">
@@ -2651,7 +2700,7 @@ export function AwardsScreen(props: Nav) {
   const { awardsStep, setAwardsStep, noaUploaded, reconciliationActive } = props
   const subTabs: { key: AwardsStep; label: string; locked?: boolean }[] = [
     { key: 'noa',       label: 'Notice of Award' },
-    { key: 'reconcile', label: 'Reconciliation', locked: !noaUploaded },
+    { key: 'reconcile', label: 'Resolve Mismatch', locked: !noaUploaded },
     { key: 'asr',       label: 'Award Setup Request (ASR)', locked: !reconciliationActive },
   ]
 
@@ -2709,22 +2758,28 @@ function NoaSubStage({ toast, noaUploaded, setNoaUploaded, setAwardsStep, rows }
     if (file) handleFile(file)
   }
 
-  const [extracted, setExtracted] = useState([
-    { label: 'FAIN',                 value: 'R34EY000000',               confidence: 'high' as const, source: 'NoA · §12' },
-    { label: 'Award Number',         value: '1R34EY000000-01',           confidence: 'high' as const, source: 'NoA · §11' },
-    { label: 'Project Title',        value: 'Test 1', confidence: 'high' as const, source: 'NoA · §14' },
-    { label: 'Sponsor',              value: 'NIH · National Eye Institute', confidence: 'high' as const, source: 'NoA cover' },
-    { label: 'Federal Award Date',   value: '02/21/2024',                confidence: 'high' as const, source: 'NoA cover' },
-    { label: 'Budget Period',        value: '03/01/2024 – 02/28/2025',   confidence: 'high' as const, source: 'NoA · §19' },
-    { label: 'Project Period',       value: '03/01/2024 – 02/28/2026',   confidence: 'high' as const, source: 'NoA · §26' },
-    { label: 'Total Year 1',         value: '$267,006',                  confidence: 'high' as const, source: 'NoA · §20' },
-    { label: 'Direct Costs (Y1)',    value: '$204,400',                  confidence: 'high' as const, source: 'NoA · §20a' },
-    { label: 'F&A (Y1)',             value: '$62,606',                   confidence: 'high' as const, source: 'NoA · §20b' },
-    { label: 'F&A Rate',             value: '57.5% MTDC',                confidence: 'high' as const, source: 'NoA · p.8' },
-    { label: 'Contact PI',           value: 'Harry Potter, OD',          confidence: 'high' as const, source: 'NoA · §7' },
-    { label: 'Multi-PIs',            value: 'Moody · Lupin · McGonagall', confidence: 'high' as const, source: 'NoA · §I' },
-    { label: 'Authorized Official',  value: 'Hermione Granger',          confidence: 'medium' as const, source: 'NoA · §8' },
+  type ExtractedField = { label: string; value: string; confidence: 'high' | 'medium' | 'low'; source: string; group: 'award' | 'period' | 'budget' | 'contact' }
+  const [extracted, setExtracted] = useState<ExtractedField[]>([
+    { group: 'award',   label: 'FAIN',                 value: 'R34EY000000',                  confidence: 'high',   source: 'NoA · §12' },
+    { group: 'award',   label: 'Award Number',         value: '1R34EY000000-01',              confidence: 'high',   source: 'NoA · §11' },
+    { group: 'award',   label: 'Project Title',        value: 'Test 1',                       confidence: 'high',   source: 'NoA · §14' },
+    { group: 'award',   label: 'Sponsor',              value: 'NIH · National Eye Institute', confidence: 'high',   source: 'NoA cover' },
+    { group: 'period',  label: 'Federal Award Date',   value: '02/21/2024',                   confidence: 'high',   source: 'NoA cover' },
+    { group: 'period',  label: 'Budget Period',        value: '03/01/2024 – 02/28/2025',      confidence: 'high',   source: 'NoA · §19' },
+    { group: 'period',  label: 'Project Period',       value: '03/01/2024 – 02/28/2026',      confidence: 'high',   source: 'NoA · §26' },
+    { group: 'budget',  label: 'Total Year 1',         value: '$267,006',                     confidence: 'high',   source: 'NoA · §20' },
+    { group: 'budget',  label: 'Direct Costs (Y1)',    value: '$204,400',                     confidence: 'high',   source: 'NoA · §20a' },
+    { group: 'budget',  label: 'F&A (Y1)',             value: '$62,606',                      confidence: 'high',   source: 'NoA · §20b' },
+    { group: 'budget',  label: 'F&A Rate',             value: '57.5% MTDC',                   confidence: 'high',   source: 'NoA · p.8' },
+    { group: 'contact', label: 'Contact PI',           value: 'Harry Potter, OD',             confidence: 'high',   source: 'NoA · §7' },
   ])
+  const groupTitles: Record<ExtractedField['group'], string> = {
+    award:   'Award Information',
+    period:  'Period',
+    budget:  'Budget',
+    contact: 'Contact',
+  }
+  const groupOrder: ExtractedField['group'][] = ['award', 'period', 'budget', 'contact']
   const [editingField, setEditingField] = useState<string | null>(null)
   function updateField(label: string, newValue: string) {
     setExtracted(extracted.map(f => f.label === label ? { ...f, value: newValue } : f))
@@ -2794,44 +2849,54 @@ function NoaSubStage({ toast, noaUploaded, setNoaUploaded, setAwardsStep, rows }
                   <span className="font-semibold tabular-nums">${Math.abs(267006 - workspaceSum).toLocaleString()}</span>
                 </div>
               </div>
-              <p className="text-[11px] text-amber-700 mt-3 leading-relaxed">Open Reconciliation to walk through every difference and adjust the Worksheet.</p>
             </div>
           </div>
 
           <div className="bg-card border border-bdLt rounded-lg overflow-hidden mt-5">
             <div className="px-5 py-3 border-b border-bdLt flex items-center justify-between">
               <h3 className="text-[13px] font-semibold">Extracted fields</h3>
-              <span className="text-[11px] text-mute">14 fields · all sourced to NoA sections</span>
+              <span className="text-[11px] text-mute">{extracted.length} fields · all sourced to NoA sections</span>
             </div>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-0 p-5">
-              {extracted.map(f => (
-                <div key={f.label} className="py-2 border-b border-bdLt last:border-b-0">
-                  <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-1">{f.label}</div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 relative">
-                      <input
-                        value={f.value}
-                        onChange={e => updateField(f.label, e.target.value)}
-                        onFocus={() => setEditingField(f.label)}
-                        onBlur={() => setEditingField(null)}
-                        title="Click to edit"
-                        className={`w-full px-2.5 py-1.5 pr-7 text-[13px] font-semibold rounded border transition focus:outline-none focus:ring-2 focus:ring-sage-500/30 focus:border-sage-500 hover:border-sage-400 ${
-                          editingField === f.label ? 'border-sage-500 bg-white' : 'border-bdLt bg-surf2/30'
-                        }`}
-                      />
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-sub pointer-events-none">✎</span>
+            <div className="p-5 space-y-5">
+              {groupOrder.map(group => {
+                const fields = extracted.filter(f => f.group === group)
+                if (fields.length === 0) return null
+                return (
+                  <div key={group}>
+                    <div className="text-[11px] text-purple-700 uppercase tracking-widest font-semibold mb-2.5">{groupTitles[group]}</div>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-0 border border-bdLt rounded-md">
+                      {fields.map(f => (
+                        <div key={f.label} className="py-2 px-3 border-b border-bdLt last:border-b-0 [&:nth-last-child(2)]:border-b-0">
+                          <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-1">{f.label}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 relative">
+                              <input
+                                value={f.value}
+                                onChange={e => updateField(f.label, e.target.value)}
+                                onFocus={() => setEditingField(f.label)}
+                                onBlur={() => setEditingField(null)}
+                                title="Click to edit"
+                                className={`w-full px-2.5 py-1.5 pr-7 text-[13px] font-semibold rounded border transition focus:outline-none focus:ring-2 focus:ring-sage-500/30 focus:border-sage-500 hover:border-sage-400 ${
+                                  editingField === f.label ? 'border-sage-500 bg-white' : 'border-bdLt bg-surf2/30'
+                                }`}
+                              />
+                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-sub pointer-events-none">✎</span>
+                            </div>
+                            <ConfidenceChip level={f.confidence} />
+                          </div>
+                          <div className="mt-1"><SourceTag source={f.source} /></div>
+                        </div>
+                      ))}
                     </div>
-                    <ConfidenceChip level={f.confidence} />
                   </div>
-                  <div className="mt-1"><SourceTag source={f.source} /></div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
 
           <div className="mt-6 flex justify-end">
             <Button variant="primary" onClick={() => setAwardsStep('reconcile')} icon={<span>→</span>}>
-              Reconciliate
+              Resolve Mismatch
             </Button>
           </div>
         </>
@@ -2904,7 +2969,7 @@ function ReconcileSubStage({ go, toast, rows, setRows, setIssues, reconciliation
     if (isEmpty) setRows(AI_PREFILL)
     setReconciliationActive(true)
     setIssues(() => INITIAL_ISSUES)
-    toast('Reconciliation mode active. Worksheet will now show NoA mismatches.')
+    toast('Resolve Mismatch mode active. Worksheet will now show NoA mismatches.')
     setTimeout(() => go('workspace'), 600)
   }
 
@@ -2912,22 +2977,22 @@ function ReconcileSubStage({ go, toast, rows, setRows, setIssues, reconciliation
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex-1 overflow-auto p-8 max-w-[1100px] w-full space-y-5">
         <div>
-          <h2 className="text-[22px] font-semibold">Award Reconciliation</h2>
-          <p className="text-[13px] text-mute mt-1">Compare the awarded total to your Worksheet draft. Acknowledge to switch the Worksheet into reconciliation mode.</p>
+          <h2 className="text-[22px] font-semibold">Award Budget Mismatch</h2>
+          <p className="text-[13px] text-mute mt-1">Compare the awarded total to your proposed budget. Acknowledge to switch the Worksheet into resolve-mismatch mode.</p>
         </div>
         <AIDisclaimer />
 
-        <div className="bg-amber-50 border border-amber-bd rounded-lg p-4 flex items-start gap-3">
-          <span className="text-amber-700">⚠</span>
-          <p className="text-[13px] text-amber-700 leading-relaxed">
-            The awarded total differs from your Worksheet draft. Review the changes below before flipping the Worksheet into reconciliation mode.
+        <div className="bg-amber-50 border border-amber-bd rounded-lg p-5 flex items-start gap-3">
+          <span className="text-amber-700 text-[16px] leading-none mt-0.5">⚠</span>
+          <p className="text-[14px] text-amber-700 font-medium leading-relaxed">
+            The awarded total differs from your proposed budget. Review the discrepancies below before opening the Worksheet to resolve mismatches.
           </p>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white border border-bdLt rounded-lg p-5">
             <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-3">Amount</div>
-            <Row k="Worksheet draft" v={`$${workspaceSum.toLocaleString()}`} />
+            <Row k="Proposed total" v={`$${workspaceSum.toLocaleString()}`} />
             <Row k="Awarded total (NoA)" v={`$${NOA_TOTAL.toLocaleString()}`} highlight />
             <Row k={delta > 0 ? 'Surplus' : 'Over budget'} v={`${delta > 0 ? '+' : '−'} $${Math.abs(delta).toLocaleString()}`} tone={delta > 0 ? 'amber' : 'red'} />
           </div>
@@ -2935,19 +3000,12 @@ function ReconcileSubStage({ go, toast, rows, setRows, setIssues, reconciliation
             <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-3">Dates</div>
             <Row k="Proposed start" v="9/1/2023" />
             <Row k="Awarded start (NoA)" v="3/1/2024" highlight />
-            <Row k="Impact" v="6-month delay — crosses July 1, FY24 rates apply" tone="amber" small />
+            <Row k="Impact" v="6-month delay · crosses July 1 · FY24 rates apply" tone="amber" />
           </div>
-        </div>
-
-        <div className="bg-white border border-bdLt rounded-lg p-5">
-          <h3 className="text-[14px] font-semibold mb-2">How would you like to proceed?</h3>
-          <p className="text-[13px] text-mute leading-relaxed">
-            Acknowledging this reconciliation will activate the NoA target in the Worksheet ($267,006) and surface row-level mismatches with the awarded budget. You can then revise the Worksheet to match.
-          </p>
         </div>
       </div>
 
-      <StickyCta hint="Award Reconciliation · Stage 2 of 3">
+      <StickyCta hint="Award Budget Mismatch · Stage 2 of 3">
         {piNotified
           ? <button disabled className="px-5 py-3 rounded-lg text-[13px] font-semibold inline-flex items-center gap-2 bg-sage-600 text-white">
               <span>✓</span> PI has been notified
@@ -2957,7 +3015,7 @@ function ReconcileSubStage({ go, toast, rows, setRows, setIssues, reconciliation
         {reconciliationActive
           ? <Button variant="secondary" onClick={() => go('workspace')}>← Back to Worksheet</Button>
           : <Button variant="primary" onClick={acknowledge} icon={<span>→</span>}>
-              Acknowledge & open Worksheet in reconciliation mode
+              Open Worksheet to Resolve Mismatch
             </Button>}
         {reconciliationActive && (
           <Button variant="primary" onClick={() => setAwardsStep('asr')} icon={<span>→</span>}>
@@ -3678,7 +3736,7 @@ function BudgetDetailView(props: Nav) {
 
               {reconciliationActive && (
                 <div className="bg-amber-50 border border-amber-bd rounded px-4 py-3 text-[12px] text-amber-700">
-                  <b>⚠ Reconciliation in progress.</b> NoA target $267,006. Worksheet currently at ${totals.total.toLocaleString()}. Open Worksheet to reconcile.
+                  <b>⚠ Mismatch resolution in progress.</b> NoA target $267,006. Worksheet currently at ${totals.total.toLocaleString()}. Open Worksheet to resolve.
                 </div>
               )}
             </div>
@@ -3752,7 +3810,7 @@ export function GuideScreen({ go, goAwards }: Nav) {
                 <li>Click <b>"AI prefill all rows"</b> (top right of the Excel grid) to load Potter / Moody / Lupin / McGonagall + Malfoy / Longbottom from similar past proposals.</li>
                 <li>Try editing any cell — subtotals, fringe, F&amp;A and the running total all recalculate live.</li>
                 <li>Set a <b>Proposed total</b> (top-left of the grid) or click <b>"AI suggest"</b> for a recommended value.</li>
-                <li>Notice the reconciliation bar says <i>"Sum vs Proposed"</i> — no NoA mismatches yet (gate is closed).</li>
+                <li>Notice the mismatch bar at the top — no NoA mismatches yet (gate is closed).</li>
               </ul>
             </Step>
 
@@ -3768,24 +3826,24 @@ export function GuideScreen({ go, goAwards }: Nav) {
               <ul>
                 <li>Click anywhere on the <b>dropzone</b> — the demo simulates uploading the NIH R34EY000000 NoA PDF.</li>
                 <li>AI extracts 14 fields (FAIN, totals, dates, PIs, F&amp;A rate). Each has a confidence chip and a source citation back to the PDF section.</li>
-                <li>You'll see a quick diff vs your Worksheet. Click <b>"Continue to Reconciliation"</b>.</li>
+                <li>You'll see a quick diff vs your Worksheet. Click <b>"Resolve Mismatch"</b>.</li>
               </ul>
             </Step>
 
-            <Step n={4} title="Reconcile and unlock mismatch mode" tab="Awards tab → Reconciliation" jumpLabel="Open Reconciliation" onJump={() => goAwards('reconcile')}>
+            <Step n={4} title="Open the Worksheet to resolve mismatches" tab="Awards tab → Resolve Mismatch" jumpLabel="Open Resolve Mismatch" onJump={() => goAwards('reconcile')}>
               <ul>
                 <li>Review the side-by-side amount + date deltas vs the NoA.</li>
                 <li>Optionally click <b>"Notify PI of changes first"</b>.</li>
-                <li>Click <b>"Acknowledge &amp; open Worksheet in reconciliation mode"</b> — this is the gate.</li>
-                <li>You're auto-routed back to Worksheet, which now shows the <b>amber reconciliation banner</b>, NoA target $267,006, and a mismatch chip on F&amp;A.</li>
+                <li>Click <b>"Open Worksheet to Resolve Mismatch"</b> — this is the gate.</li>
+                <li>You're auto-routed back to Worksheet, which now shows the <b>amber resolve-mismatch banner</b>, NoA target $267,006, and a mismatch chip on F&amp;A.</li>
               </ul>
             </Step>
 
             <Step n={5} title="Validate and resolve the mismatch" tab="Worksheet tab" jumpLabel="Back to Worksheet" onJump={() => go('workspace')}>
               <ul>
                 <li>Click the <b>"Validate"</b> button in the floating dock — surfaces a $41 rounding mismatch.</li>
-                <li>The right-side mismatch panel opens. Click <b>"Apply fix"</b> to reconcile to $267,006.</li>
-                <li>The reconciliation bar flips to "Balanced ✓".</li>
+                <li>The right-side mismatch panel opens. Click <b>"Apply fix"</b> to resolve to $267,006.</li>
+                <li>The mismatch bar flips to "Balanced ✓".</li>
               </ul>
             </Step>
 
@@ -3802,7 +3860,7 @@ export function GuideScreen({ go, goAwards }: Nav) {
             <h2 className="text-[16px] font-semibold mb-3">Side panels &amp; toggles you can play with</h2>
             <div className="grid grid-cols-2 gap-3">
               <Tip title="AI toggle">
-                Top-right of the Worksheet reconciliation bar. Turning AI off hides derived-value chips and source citations so you can see which fields require manual entry.
+                Top-right of the Worksheet mismatch bar. Turning AI off hides derived-value chips and source citations so you can see which fields require manual entry.
               </Tip>
               <Tip title="PI Review panel">
                 Click <b>"PI Review"</b> in the floating dock. Simulate Dr. Potter approving the budget or requesting changes; reply in the threaded chat.
@@ -3823,7 +3881,7 @@ export function GuideScreen({ go, goAwards }: Nav) {
           </div>
 
           <div className="mt-10 bg-purple-100/40 border border-purple-700/30 rounded-lg p-4 text-[12px] text-purple-700">
-            <b>✦ Reset tip:</b> reload the page to return Worksheet to its blank starting state and reset reconciliation. The prototype has no persistence.
+            <b>✦ Reset tip:</b> reload the page to return Worksheet to its blank starting state and clear the mismatch state. The prototype has no persistence.
           </div>
 
           <div className="mt-6 flex items-center justify-between">
