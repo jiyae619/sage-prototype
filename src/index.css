@@ -35,3 +35,16 @@ body { background: var(--color-page); color: var(--color-ink); font-family: 'Int
 /* Smooth side-panel transitions */
 @keyframes slideInLeft  { from { width: 0;     opacity: 0 } to { width: 280px; opacity: 1 } }
 @keyframes slideInRight { from { width: 0;     opacity: 0 } to { width: 340px; opacity: 1 } }
+
+/* Mismatch pulse — pulls the GM's eye to unresolved issues */
+@keyframes mismatch-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(185, 28, 28, 0.65);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(185, 28, 28, 0);
+    transform: scale(1.04);
+  }
+}
+.animate-mismatch-pulse { animation: mismatch-pulse 1.4s ease-in-out infinite; }
