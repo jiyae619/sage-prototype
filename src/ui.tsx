@@ -567,7 +567,7 @@ export const TABS: { key: TabKey; label: string; isNew?: boolean; isTutorial?: b
   { key: 'awards',    label: 'Awards' },
   { key: 'subawards', label: 'Subawards' },
   { key: 'workspace', label: 'Worksheet', isNew: true },
-  { key: 'files',     label: 'Files',     isNew: true },
+  { key: 'files',     label: 'Documents', isNew: true },
   { key: 'guide',     label: 'Guide',     isTutorial: true },
 ]
 
@@ -741,7 +741,7 @@ export function HamburgerButton({ collapsed, onToggle }: { collapsed: boolean; o
 export function FloatingActionBar({ children }: { children: ReactNode }) {
   return (
     <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-      <div className="pointer-events-auto bg-card border border-bdLt rounded-full shadow-[0_8px_24px_rgba(0,0,0,0.12)] flex items-center gap-1 px-2 py-1.5">
+      <div className="pointer-events-auto bg-card border-2 border-sage-700 rounded-full shadow-[0_8px_24px_rgba(0,0,0,0.12)] flex items-center gap-1 px-2 py-1.5">
         {children}
       </div>
     </div>

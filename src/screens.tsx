@@ -14,7 +14,7 @@ export type { Issue } from './ui'
 // TYPES, CONSTANTS, FORMULA ENGINE
 // =====================================================================
 
-export type RowRole = '' | 'PI' | 'Grad-PhD' | 'Grad-Master' | 'Bachelor'
+export type RowRole = '' | 'Main-PI' | 'Co-PI' | 'Grad-PhD' | 'Grad-Master' | 'Bachelor' | 'TBD-Subaward' | 'Other'
 
 export type WorkspaceRow = {
   id: string;
@@ -53,10 +53,10 @@ export const BLANK_ROWS: WorkspaceRow[] = [
 ]
 
 const AI_PREFILL: WorkspaceRow[] = [
-  { id: 'per1',   cellRef: 'F4',  category: 'personnel', label: 'Harry Potter',       role: 'Contact PI · OD',     roleType: 'PI',          monthlySalary: 16826, effortPct: 10, months: 9 },
-  { id: 'per2',   cellRef: 'F5',  category: 'personnel', label: 'Alastor Moody',      role: 'Multi-PI · OD',       roleType: 'PI',          monthlySalary: 16822, effortPct: 5,  months: 9 },
-  { id: 'per3',   cellRef: 'F6',  category: 'personnel', label: 'Remus Lupin',        role: 'Multi-PI',            roleType: 'PI',          monthlySalary: 16822, effortPct: 5,  months: 9 },
-  { id: 'per4',   cellRef: 'F7',  category: 'personnel', label: 'Minerva McGonagall', role: 'Multi-PI · MD',       roleType: 'PI',          monthlySalary: 21867, effortPct: 5,  months: 9 },
+  { id: 'per1',   cellRef: 'F4',  category: 'personnel', label: 'Harry Potter',       role: 'Main PI · OD',        roleType: 'Main-PI',     monthlySalary: 16826, effortPct: 10, months: 9 },
+  { id: 'per2',   cellRef: 'F5',  category: 'personnel', label: 'Alastor Moody',      role: 'Co-PI · OD',          roleType: 'Co-PI',       monthlySalary: 16822, effortPct: 5,  months: 9 },
+  { id: 'per3',   cellRef: 'F6',  category: 'personnel', label: 'Remus Lupin',        role: 'Co-PI',               roleType: 'Co-PI',       monthlySalary: 16822, effortPct: 5,  months: 9 },
+  { id: 'per4',   cellRef: 'F7',  category: 'personnel', label: 'Minerva McGonagall', role: 'Co-PI · MD',          roleType: 'Co-PI',       monthlySalary: 21867, effortPct: 5,  months: 9 },
   { id: 'per5',   cellRef: 'F8',  category: 'personnel', label: 'Draco Malfoy',       role: 'Candidate · Sch 1',   roleType: 'Grad-PhD',    monthlySalary: 3621,  effortPct: 50, months: 9 },
   { id: 'per6',   cellRef: 'F9',  category: 'personnel', label: 'Neville Longbottom', role: "Master's · Sch 1",    roleType: 'Grad-Master', monthlySalary: 3219,  effortPct: 50, months: 9 },
   { id: 'fringe', cellRef: 'F10', category: 'fringe',    label: 'Fringe benefits',    role: 'Faculty 27% / Grad 18.2% blended', fringeRate: 22.7 },
@@ -88,6 +88,42 @@ function scaleProposalRows(factor: number): WorkspaceRow[] {
   }))
 }
 
+// Standard 3% annual escalation across periods — period 1 baseline, +3% in 2, +6% in 3
+const PERIOD_FACTORS = [1.0, 1.03, 1.06]
+
+// Per-period personnel label overrides — Main PI continues (per1), Co-PIs and trainees rotate.
+const PERIOD_LABEL_OVERRIDES: Record<2 | 3, Record<string, string>> = {
+  2: {
+    per1: 'Harry Potter',          // Main PI continues across periods
+    per2: 'Sirius Black',
+    per3: 'Nymphadora Tonks',
+    per4: 'Filius Flitwick',
+    per5: 'Cho Chang',
+    per6: 'Luna Lovegood',
+  },
+  3: {
+    per1: 'Harry Potter',          // Main PI continues across periods
+    per2: 'Kingsley Shacklebolt',
+    per3: 'Arthur Weasley',
+    per4: 'Pomona Sprout',
+    per5: 'Hermione Granger',
+    per6: 'Ginny Weasley',
+  },
+}
+
+function scaleRowsForPeriod(baseRows: WorkspaceRow[], period: 1 | 2 | 3): WorkspaceRow[] {
+  if (period === 1) return baseRows
+  const factor = PERIOD_FACTORS[period - 1]
+  const labels = PERIOD_LABEL_OVERRIDES[period]
+  return baseRows.map(r => ({
+    ...r,
+    monthlySalary:     r.monthlySalary     ? Math.round(r.monthlySalary * factor)     : r.monthlySalary,
+    amount:            r.amount            ? Math.round(r.amount * factor)            : r.amount,
+    tuitionPerQuarter: r.tuitionPerQuarter ? Math.round(r.tuitionPerQuarter * factor) : r.tuitionPerQuarter,
+    label:             labels[r.id] ?? r.label,
+  }))
+}
+
 const PAST_PROPOSALS: PastProposal[] = [
   { id: 'p1', name: 'Retinal Imaging Biomarkers',     sponsor: 'NIH · NEI',                     grantManager: 'Rubeus Hagrid',    year: 2022, pi: 'Remus Lupin',        rows: scaleProposalRows(0.99) },
   { id: 'p2', name: 'Glaucoma Progression Study',     sponsor: 'NIH · NEI',                     grantManager: 'Rubeus Hagrid',    year: 2023, pi: 'Alastor Moody',      rows: scaleProposalRows(1.02) },
@@ -116,7 +152,8 @@ export type RoleConfig = {
 
 export function roleConfigFor(role: RowRole | undefined): RoleConfig | null {
   switch (role) {
-    case 'PI':
+    case 'Main-PI':
+    case 'Co-PI':
       return {
         posType: 'Faculty', posTypes: ['Faculty', 'Research Faculty', 'Affiliate'],
         sched: '12-month', schedules: ['12-month', '9-month'],
@@ -153,6 +190,28 @@ export function roleConfigFor(role: RowRole | undefined): RoleConfig | null {
         monthlySalary: 880, fringeRate: 8.4, tuitionAnnual: 0,
         source: 'UW Student Employment',
         sourceUrl: 'https://hr.uw.edu/comp/jobs-and-job-profiles/job-classifications-and-compensation/',
+      }
+    case 'TBD-Subaward':
+      return {
+        posType: 'TBD / Subaward', posTypes: ['TBD position (new hire)', 'Subaward personnel', 'Non-Workday consultant'],
+        sched: 'Negotiated', schedules: ['Negotiated', '12-month', '9-month', 'Hourly'],
+        level: 'Free text', levels: ['Free text'],
+        fteLabel: '50%', ftes: ['10%', '25%', '50%', '75%', '100%'],
+        monthlySalary: 0, fringeRate: 0, tuitionAnnual: 0,
+        source: 'Subawardee negotiated rate · enter manually',
+        sourceUrl: '',
+      }
+    case 'Other':
+      // Empty config — the panel hides the auto-populated UW card and the dropdown
+      // grid for this case, then shows a free-text "Custom position" banner instead.
+      return {
+        posType: '', posTypes: [],
+        sched: '', schedules: [],
+        level: '', levels: [],
+        fteLabel: '', ftes: [],
+        monthlySalary: 0, fringeRate: 0, tuitionAnnual: 0,
+        source: 'Custom — fill manually',
+        sourceUrl: '',
       }
     default:
       return null
@@ -325,8 +384,8 @@ export function WorkspaceScreen(props: Nav) {
     toast('AI prefilled rows from 3 similar NIH R34 vision proposals.')
   }
 
-  function copyProposalBudget(proposal: PastProposal) {
-    setRows(proposal.rows.map(r => ({ ...r })))
+  function copyProposalBudget(rowsToCopy: WorkspaceRow[]) {
+    setRows(rowsToCopy.map(r => ({ ...r })))
     toast('Budget copied to the current budget.')
   }
 
@@ -345,7 +404,10 @@ export function WorkspaceScreen(props: Nav) {
     setPiReviewOpen(true); setAddinOpen(false); setMismatchView(false)
     if (piReviewStatus === 'idle') {
       setPiReviewStatus('sent')
-      toast('Budget sent to Dr. Harry Potter for review.')
+      // Review communication is sent only to the Main PI — Co-PIs are not notified.
+      const mainPi = rows.find(r => r.category === 'personnel' && r.roleType === 'Main-PI')
+      const name = mainPi?.label ? `Dr. ${mainPi.label}` : 'the Main PI'
+      toast(`Budget sent to ${name} for review.`)
     }
   }
   function simulatePiDecision(decision: 'approved' | 'changes_requested') {
@@ -379,21 +441,9 @@ export function WorkspaceScreen(props: Nav) {
     setAddinOpen(true); setMismatchView(true)
     setSelectedRow(issues[idx]?.cellRef?.replace(/[^a-z0-9]/gi, '').toLowerCase() ?? 'fa')
   }
-  function runValidate() {
-    if (!reconciliationActive) {
-      toast('Pre-award draft mode — open Awards › Reconciliation to compare against the NoA.')
-      return
-    }
-    if (issues.length === 0 && delta === 0) {
-      toast('Validation pass: all rows balanced.')
-    } else {
-      setIssues(() => INITIAL_ISSUES)
-      toast(`Validation found ${INITIAL_ISSUES.length} mismatch. Resolve in the right panel.`)
-      openMismatch()
-    }
-  }
   function confirmUpload() {
-    setUploadOpen(false); setPdfOpen(true); setAddinOpen(true); setMismatchView(false); setSelectedRow('eq')
+    // Open only the left-hand PDF preview; leave the right-hand panel state as-is.
+    setUploadOpen(false); setPdfOpen(true)
     // OCR-extract: fill F13 worksheet text from the invoice
     setRows(rows.map(r => r.id === 'eq' ? {
       ...r,
@@ -673,6 +723,20 @@ export function WorkspaceScreen(props: Nav) {
                               value={r.roleType || ''}
                               onChange={e => {
                                 const newRole = e.target.value as RowRole
+                                // Enforce only one Main PI per worksheet — Co-PIs can be multiple.
+                                if (newRole === 'Main-PI') {
+                                  const existing = rows.find(x => x.id !== r.id && x.roleType === 'Main-PI')
+                                  if (existing) {
+                                    toast(`Main PI is already assigned${existing.label ? ` to ${existing.label}` : ''}. Use Co-PI for additional PIs.`)
+                                    return
+                                  }
+                                }
+                                // 'Other' is fully custom — leave every field empty for the user to fill in.
+                                if (newRole === 'Other') {
+                                  updateRow(r.id, { roleType: newRole })
+                                  setAddinOpen(true); setSelectedRow(r.id)
+                                  return
+                                }
                                 const cfg = roleConfigFor(newRole)
                                 updateRow(r.id, {
                                   roleType: newRole,
@@ -690,10 +754,13 @@ export function WorkspaceScreen(props: Nav) {
                                 r.roleType ? 'text-ink font-medium' : 'text-sub italic'
                               }`}>
                               <option value="">Select role…</option>
-                              <option value="PI">PI</option>
+                              <option value="Main-PI">Main PI</option>
+                              <option value="Co-PI">Co-PI</option>
                               <option value="Grad-PhD">Grad-PhD</option>
                               <option value="Grad-Master">Grad-Master</option>
                               <option value="Bachelor">Bachelor</option>
+                              <option value="TBD-Subaward">TBD / Subaward</option>
+                              <option value="Other">Other</option>
                             </select>
                           ) : (
                             <AISuggestInput
@@ -722,7 +789,7 @@ export function WorkspaceScreen(props: Nav) {
                             <NumSuggestInput value={r.tuitionPerQuarter} onChange={v => updateRow(r.id, { tuitionPerQuarter: v })} prefix="$" placeholder="/qtr" suggestions={AI_SALARY_SUGGESTIONS['tuit']} aiOn={aiOn} />
                           )}
                           {r.category === 'fa' && (
-                            r.faRate ? <span className="text-mute text-[11px]">{r.faRate}%</span> : null
+                            <NumSuggestInput value={r.faRate} onChange={v => updateRow(r.id, { faRate: v })} suffix="%" placeholder="rate" suggestions={[57.5, 26, 10, 8]} aiOn={aiOn} />
                           )}
                           {(r.category === 'travel' || r.category === 'supplies' || r.category === 'equipment') && (
                             <NumSuggestInput value={r.amount} onChange={v => updateRow(r.id, { amount: v })} prefix="$" placeholder="amount" suggestions={AI_SALARY_SUGGESTIONS[r.id]} aiOn={aiOn} />
@@ -814,16 +881,20 @@ export function WorkspaceScreen(props: Nav) {
             />
           )
         })()}
-        {piReviewOpen && (
-          <PIReviewPanel
-            status={piReviewStatus}
-            piComment={piComment}
-            onPiCommentChange={setPiComment}
-            onSimulateDecision={simulatePiDecision}
-            onSendReply={() => setPiReviewStatus('sent')}
-            onClose={() => setPiReviewOpen(false)}
-          />
-        )}
+        {piReviewOpen && (() => {
+          const mainPi = rows.find(r => r.category === 'personnel' && r.roleType === 'Main-PI')
+          return (
+            <PIReviewPanel
+              status={piReviewStatus}
+              piComment={piComment}
+              onPiCommentChange={setPiComment}
+              onSimulateDecision={simulatePiDecision}
+              onSendReply={() => setPiReviewStatus('sent')}
+              onClose={() => setPiReviewOpen(false)}
+              mainPi={mainPi ? { name: mainPi.label, role: mainPi.role } : null}
+            />
+          )
+        })()}
         {addinOpen && mismatchView && activeMismatch && (
           <MismatchPanel
             issue={activeMismatch}
@@ -859,6 +930,7 @@ export function WorkspaceScreen(props: Nav) {
                   setMismatchView(false)
                   setSelectedRow(null)
                 }}
+                onUpload={() => setUploadOpen(true)}
                 onClose={() => setAddinOpen(false)}
               />
             )
@@ -870,6 +942,7 @@ export function WorkspaceScreen(props: Nav) {
               pdfOpen={pdfOpen}
               onClose={() => setAddinOpen(false)}
               onVerify={verifyRow}
+              onUpdate={updateRow}
               toast={toast}
             />
           )
@@ -877,23 +950,6 @@ export function WorkspaceScreen(props: Nav) {
 
         {/* Floating action bar */}
         <FloatingActionBar>
-          <FloatingBtn primary tooltip="Upload" onClick={() => setUploadOpen(true)} tutorialTarget="upload-button"
-            icon={<UploadIcon />} label="Upload" />
-          <FloatingBtn active={pdfOpen} tooltip={pdfOpen ? 'Hide PDF' : 'Attachments'} tutorialTarget="attachment-button"
-            onClick={() => {
-              const nextPdfOpen = !pdfOpen
-              setPdfOpen(nextPdfOpen)
-              if (nextPdfOpen) {
-                setAddinOpen(true)
-                setSelectedRow('eq')
-              } else {
-                setAddinOpen(false)
-                setMismatchView(false)
-                if (selectedRow === 'eq') setSelectedRow(null)
-              }
-            }}
-            icon={<PaperclipIcon />} />
-          <FloatingBtn tooltip="Validate" onClick={runValidate} icon={<CheckIcon />} tutorialTarget="validate-button" />
           <FloatingBtn tooltip="Send to PI for review" onClick={sendForPiReview} icon={<SendReviewIcon />} label="PI Review" tutorialTarget="pi-review-button" />
           <span className="w-px h-6 bg-bd mx-1 shrink-0" aria-hidden />
           {!egc1Submitted ? (
@@ -1000,7 +1056,7 @@ function ProposalFilter({ label, value, onChange, options }: {
 function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
   open: boolean;
   onClose: () => void;
-  onCopy: (p: PastProposal) => void;
+  onCopy: (rows: WorkspaceRow[]) => void;
   onCopySection: (sectionTitle: string, rows: WorkspaceRow[]) => void;
 }) {
   const [fName, setFName] = useState('')
@@ -1082,7 +1138,7 @@ function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
                     <td className="px-4 py-2.5">{p.pi}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums font-semibold">${totalsOf(p.rows).total.toLocaleString()}</td>
                     <td className="px-4 py-2.5 text-right">
-                      <button onClick={e => { e.stopPropagation(); onCopy(p) }}
+                      <button onClick={e => { e.stopPropagation(); onCopy(p.rows) }}
                         className="px-3 py-1.5 rounded-md bg-purple-700 text-white text-[11px] font-semibold hover:opacity-90 transition">
                         Copy budget
                       </button>
@@ -1114,12 +1170,15 @@ function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
 
 function ProposalDetailModal({ proposal, onCopy, onCopySection, onClose }: {
   proposal: PastProposal;
-  onCopy: (p: PastProposal) => void;
+  onCopy: (rows: WorkspaceRow[]) => void;
   onCopySection: (sectionTitle: string, rows: WorkspaceRow[]) => void;
   onClose: () => void;
 }) {
-  const total = totalsOf(proposal.rows).total
-  const rowById = (id: string) => proposal.rows.find(r => r.id === id)
+  const [period, setPeriod] = useState<1 | 2 | 3>(1)
+  // Period 1 is the proposal's baseline; periods 2 and 3 escalate by 3% per year.
+  const displayedRows = scaleRowsForPeriod(proposal.rows, period)
+  const total = totalsOf(displayedRows).total
+  const rowById = (id: string) => displayedRows.find(r => r.id === id)
 
   // Worksheet-style cell formatting — mirrors the Salary / % Effort / Months columns
   const rateCell = (r: WorkspaceRow) => {
@@ -1156,6 +1215,32 @@ function ProposalDetailModal({ proposal, onCopy, onCopySection, onClose }: {
           ✦ Preview only — copying loads these values into your editable worksheet.
         </div>
 
+        {/* Period tabs */}
+        <div className="px-5 pt-3 border-b border-bdLt bg-page flex gap-2" role="tablist" aria-label="Budget period">
+          {([1, 2, 3] as const).map(p => {
+            const active = period === p
+            return (
+              <button
+                key={p}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setPeriod(p)}
+                className={`group inline-flex items-center gap-2 px-4 py-2 rounded-t-lg border border-b-0 -mb-px transition ${
+                  active
+                    ? 'bg-card border-bdLt text-purple-700 shadow-[0_-1px_0_0_var(--tw-shadow-color)] shadow-purple-700'
+                    : 'bg-transparent border-transparent text-mute hover:bg-card/60 hover:text-ink'
+                }`}>
+                <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold transition ${
+                  active ? 'bg-purple-700 text-white' : 'bg-bdLt text-mute group-hover:bg-bd group-hover:text-ink'
+                }`}>
+                  {p}
+                </span>
+                <span className="text-[13px] font-semibold tracking-tight">Period</span>
+              </button>
+            )
+          })}
+        </div>
+
         <div className="flex-1 overflow-auto">
           <table className="w-full text-[12px] border-collapse">
             <thead className="sticky top-0 bg-surf2 text-sub">
@@ -1179,7 +1264,7 @@ function ProposalDetailModal({ proposal, onCopy, onCopySection, onClose }: {
                       <td colSpan={7} className="px-3 py-1.5">
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-[10px] uppercase tracking-widest font-semibold text-sub">{section.title}</span>
-                          <button onClick={() => onCopySection(section.title, secRows)}
+                          <button onClick={() => onCopySection(`${section.title} (Period ${period})`, secRows)}
                             className="px-2.5 py-1 rounded-md border border-purple-700/40 text-purple-700 text-[10px] font-semibold hover:bg-purple-100/60 transition shrink-0">
                             Copy section
                           </button>
@@ -1194,7 +1279,7 @@ function ProposalDetailModal({ proposal, onCopy, onCopySection, onClose }: {
                         <td className="px-3 py-2 text-right tabular-nums">{rateCell(r)}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{effortCell(r)}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{monthsCell(r)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-semibold">${computeSubtotal(r, proposal.rows).toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold">${computeSubtotal(r, displayedRows).toLocaleString()}</td>
                       </tr>
                     ))}
                   </Fragment>
@@ -1209,7 +1294,7 @@ function ProposalDetailModal({ proposal, onCopy, onCopySection, onClose }: {
           <span className="text-[16px] font-semibold tabular-nums">${total.toLocaleString()}</span>
           <div className="flex-1" />
           <button onClick={onClose} className="px-4 py-2 border border-bd rounded-lg text-[13px] font-medium hover:bg-surf2 transition">Close</button>
-          <button onClick={() => onCopy(proposal)}
+          <button onClick={() => onCopy(displayedRows)}
             className="px-4 py-2 rounded-lg bg-purple-700 text-white text-[13px] font-semibold hover:opacity-90 transition">
             Copy budget to worksheet
           </button>
@@ -1403,9 +1488,11 @@ function formulaFor(id: string | null, rows: WorkspaceRow[]): string {
 // SAGE ADD-IN — context panel for selected row
 // =====================================================================
 
-function SageAddIn({ row, allRows, pdfOpen, onClose, onVerify, toast }: {
+function SageAddIn({ row, allRows, pdfOpen, onClose, onVerify, onUpdate, toast }: {
   row?: WorkspaceRow; allRows: WorkspaceRow[]; pdfOpen: boolean;
-  onClose: () => void; onVerify: (id: string) => void; toast: (m: string) => void;
+  onClose: () => void; onVerify: (id: string) => void;
+  onUpdate: (id: string, patch: Partial<WorkspaceRow>) => void;
+  toast: (m: string) => void;
 }) {
   if (!row) return null
   const sub = computeSubtotal(row, allRows)
@@ -1468,7 +1555,47 @@ function SageAddIn({ row, allRows, pdfOpen, onClose, onVerify, toast }: {
         {row.category === 'fa' && (
           <>
             <h3 className="text-[14px] font-semibold">F&A indirect costs — {row.cellRef}</h3>
-            <Stat k="Rate" v={`${row.faRate}% MTDC`} confidence="high" source="DHHS Rate Agreement FY24" />
+
+            {/* Auto-default banner — keeps GMs in the loop, doesn't take the wheel */}
+            <div className="bg-purple-100/60 border border-purple-100 rounded-lg p-3 space-y-1.5">
+              <div className="flex items-center gap-2 text-[11px] font-semibold text-purple-700">
+                <span aria-hidden>✦</span> Auto-defaulted from sponsor agreement
+              </div>
+              <div className="text-[12px] text-ink leading-relaxed">
+                DHHS negotiated rate · <b>57.5% MTDC</b> · effective <b>FY26</b>
+              </div>
+              <div className="text-[11px] text-mute">
+                Picked from sponsor, award type, and location. Some sponsors set a lower rate — override below if needed.
+              </div>
+            </div>
+
+            {/* Editable rate — GM override path */}
+            <div className="space-y-1.5">
+              <div className="text-[10px] text-sub uppercase tracking-widest font-semibold">Rate (override)</div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={row.faRate ?? ''}
+                  onChange={e => onUpdate(row.id, { faRate: Number(e.target.value) || 0 })}
+                  step="0.1"
+                  className="w-24 px-2.5 py-1.5 border border-bd rounded text-[13px] tabular-nums focus:outline-none focus:border-sage-500"
+                />
+                <span className="text-[12px] text-mute">% MTDC</span>
+                {row.faRate !== 57.5 && (
+                  <button
+                    onClick={() => onUpdate(row.id, { faRate: 57.5 })}
+                    className="ml-auto text-[11px] text-sage-700 underline hover:text-sage-800">
+                    Reset to default
+                  </button>
+                )}
+              </div>
+              {row.faRate !== 57.5 && row.faRate != null && (
+                <div className="text-[11px] text-amber-700 flex items-center gap-1.5">
+                  <span aria-hidden>⚠</span> Overridden from sponsor default (57.5%). Routing will flag this for OSP review.
+                </div>
+              )}
+            </div>
+
             <Stat k="MTDC base" v={`$${totalsOf(allRows).mtdcBase.toLocaleString()}`} sub="Excludes tuition + capital equipment > $5k + subaward portion > $25k" />
             <Stat k="F&A (computed)" v={`$${sub.toLocaleString()}`} confidence="high" source="Live formula" />
           </>
@@ -1504,10 +1631,11 @@ function Stat({ k, v, sub, confidence, source }: { k: string; v: string; sub?: s
 // PersonnelPanel — new right-panel design (matches the user's reference)
 // =====================================================================
 
-function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
+function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onUpload, onClose }: {
   row: WorkspaceRow; allRows: WorkspaceRow[]; period: number;
   onUpdate: (id: string, patch: Partial<WorkspaceRow>) => void;
   onVerify: (id: string) => void;
+  onUpload: () => void;
   onClose: () => void;
 }) {
   const sub = computeSubtotal(row, allRows)
@@ -1523,8 +1651,8 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
           <div className="text-[36px] mb-3 text-purple-700">✦</div>
           <div className="text-[14px] font-semibold mb-2">Pick a role to begin</div>
           <p className="text-[12px] text-mute leading-relaxed">
-            In the worksheet row, select <b>PI</b>, <b>Grad-PhD</b>, <b>Grad-Master</b>, or <b>Bachelor</b> from the Role dropdown.
-            UW source data will auto-populate here.
+            Select <b>Main PI</b>, <b>Co-PI</b>, <b>Grad-PhD</b>, <b>Grad-Master</b>, or <b>Bachelor</b> for Workday-linked roles (auto-populated),
+            <b> TBD / Subaward</b> for new hires &amp; subaward personnel, or <b>Other</b> for a fully custom position.
           </p>
         </div>
       </aside>
@@ -1562,16 +1690,114 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
           {' '}to tab between the side panel and main content.
         </div>
 
-        {/* Dropdown grid */}
-        <div className="grid grid-cols-2 gap-3">
-          <DropField label="POSITION TYPE" value={cfg.posType} options={cfg.posTypes} />
-          <DropField label="SCHEDULE"      value={cfg.sched}   options={cfg.schedules} />
-          <DropField label="LEVEL"         value={cfg.level}   options={cfg.levels} />
-          <DropField label="BASE FTE"      value={fteValue}    options={cfg.ftes}
-            onChange={v => onUpdate(row.id, { effortPct: Number(v.replace(/[^0-9]/g, '')) || 0 })} />
-        </div>
+        {/* Dropdown grid — hidden for 'Other' (user fills in custom position below) */}
+        {row.roleType !== 'Other' && (
+          <div className="grid grid-cols-2 gap-3">
+            <DropField label="POSITION TYPE" value={cfg.posType} options={cfg.posTypes} />
+            <DropField label="SCHEDULE"      value={cfg.sched}   options={cfg.schedules} />
+            <DropField label="LEVEL"         value={cfg.level}   options={cfg.levels} />
+            <DropField label="BASE FTE"      value={fteValue}    options={cfg.ftes}
+              onChange={v => onUpdate(row.id, { effortPct: Number(v.replace(/[^0-9]/g, '')) || 0 })} />
+          </div>
+        )}
 
-        {/* Auto-populated card */}
+        {/* Other — custom position, fully manual */}
+        {row.roleType === 'Other' && (
+          <div className="bg-sage-50 border-l-[3px] border-sage-600 rounded-md px-3.5 py-3 space-y-2.5">
+            <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-sage-700">
+              <span aria-hidden>✎</span> Custom position — fill in based on your needs
+            </span>
+            <p className="text-[11px] text-sage-700/90 leading-relaxed">
+              Use <b>Other</b> for any role not covered by the standard categories. All fields below are blank — enter your own values.
+            </p>
+            <div>
+              <div className="text-[10px] text-sage-700 uppercase tracking-widest font-semibold mb-1">Position description</div>
+              <input
+                type="text"
+                value={row.role || ''}
+                onChange={e => onUpdate(row.id, { role: e.target.value })}
+                placeholder="e.g., Visiting scientist · Consultant · Lab tech"
+                className="w-full px-2.5 py-1.5 border border-bd rounded text-[12px] focus:outline-none focus:border-sage-500 bg-white"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-[10px] text-sage-700 uppercase tracking-widest font-semibold mb-1">Effort %</div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={row.effortPct ?? ''}
+                    onChange={e => onUpdate(row.id, { effortPct: Number(e.target.value) || 0 })}
+                    step="1"
+                    placeholder="e.g., 25"
+                    className="w-20 px-2.5 py-1.5 border border-bd rounded text-[12px] tabular-nums focus:outline-none focus:border-sage-500 bg-white"
+                  />
+                  <span className="text-[11px] text-mute">%</span>
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] text-sage-700 uppercase tracking-widest font-semibold mb-1">Fringe rate</div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={row.fringeRate ?? ''}
+                    onChange={e => onUpdate(row.id, { fringeRate: Number(e.target.value) || 0 })}
+                    step="0.1"
+                    placeholder="e.g., 25"
+                    className="w-20 px-2.5 py-1.5 border border-bd rounded text-[12px] tabular-nums focus:outline-none focus:border-sage-500 bg-white"
+                  />
+                  <span className="text-[11px] text-mute">%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TBD / Subaward — manual entry banner + free-text role */}
+        {row.roleType === 'TBD-Subaward' && (
+          <div className="bg-amber-50 border-l-[3px] border-amber-bd rounded-md px-3.5 py-3 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-amber-700">
+                <span aria-hidden>⚠</span> Manual entry — not in Workday
+              </span>
+            </div>
+            <p className="text-[11px] text-amber-700/90 leading-relaxed">
+              Use this for <b>TBD positions</b> (new hires not yet in Workday) or <b>subaward personnel</b>.
+              Enter the subawardee's negotiated rate, fringe, and a free-text role description below.
+            </p>
+            <div>
+              <div className="text-[10px] text-amber-700 uppercase tracking-widest font-semibold mb-1">
+                Role / Subawardee description
+              </div>
+              <input
+                type="text"
+                value={row.role || ''}
+                onChange={e => onUpdate(row.id, { role: e.target.value })}
+                placeholder="e.g., Stanford · Dr. Brown lab · Co-Investigator"
+                className="w-full px-2.5 py-1.5 border border-bd rounded text-[12px] focus:outline-none focus:border-sage-500 bg-white"
+              />
+            </div>
+            <div>
+              <div className="text-[10px] text-amber-700 uppercase tracking-widest font-semibold mb-1">
+                Negotiated fringe rate
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={row.fringeRate ?? ''}
+                  onChange={e => onUpdate(row.id, { fringeRate: Number(e.target.value) || 0 })}
+                  step="0.1"
+                  placeholder="e.g., 25"
+                  className="w-24 px-2.5 py-1.5 border border-bd rounded text-[12px] tabular-nums focus:outline-none focus:border-sage-500 bg-white"
+                />
+                <span className="text-[11px] text-mute">% (per subaward agreement)</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Auto-populated card (Workday-linked roles only) */}
+        {row.roleType !== 'TBD-Subaward' && row.roleType !== 'Other' && (
         <div className="bg-purple-100/40 border-l-[3px] border-purple-700 rounded-md px-3.5 py-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-purple-700">
@@ -1609,6 +1835,7 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
             <span>ⓘ</span> Rates effective FY26 · pulled from UW Finance · May 18, 2026.
           </div>
         </div>
+        )}
 
         {/* Editable inputs */}
         <Field2 label="MONTHLY BASE SALARY" prefix="$"
@@ -1647,7 +1874,7 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
 
         {row.autoPopulated && !row.verified && (
           <div className="bg-purple-100/40 border border-purple-700/30 rounded-md p-3 text-[11px] text-purple-700">
-            <b>✦ AI auto-populated</b> — these values were suggested from a verified {row.roleType === 'PI' ? 'Contact PI' : row.roleType === 'Grad-PhD' ? 'PhD candidate' : "Master's RA"}. Review and click <b>Approve</b> to lock them in.
+            <b>✦ AI auto-populated</b> — these values were suggested from a verified {row.roleType === 'Main-PI' ? 'Main PI' : row.roleType === 'Co-PI' ? 'Co-PI' : row.roleType === 'Grad-PhD' ? 'PhD candidate' : "Master's RA"}. Review and click <b>Approve</b> to lock them in.
           </div>
         )}
       </div>
@@ -1657,6 +1884,12 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
         <button onClick={onClose}
           className="flex-1 px-4 py-2.5 border border-bd rounded-lg text-[13px] font-medium hover:bg-surf2 transition">
           Cancel
+        </button>
+        <button onClick={onUpload}
+          data-tutorial-target="upload-button"
+          title="Upload supporting documents"
+          className="flex-1 px-4 py-2.5 border border-sage-600 text-sage-700 rounded-lg text-[13px] font-semibold hover:bg-sage-50 transition inline-flex items-center justify-center gap-1.5">
+          <UploadIcon /> Upload
         </button>
         <button onClick={() => onVerify(row.id)}
           data-tutorial-target="role-period-update"
@@ -1842,12 +2075,14 @@ function PdfPreviewPanel({ amount, onAmountChange, onClose }: { amount: number; 
                 aria-label="Correct extracted invoice amount"
               />
             </div>
-            <button
-              onClick={applyCorrection}
-              className="px-3 py-2 rounded-md bg-sage-600 text-white text-[11px] font-semibold hover:bg-sage-700 transition"
-            >
-              Apply
-            </button>
+            {!validated && (
+              <button
+                onClick={applyCorrection}
+                className="px-3 py-2 rounded-md bg-sage-600 text-white text-[11px] font-semibold hover:bg-sage-700 transition"
+              >
+                Apply
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -2001,12 +2236,17 @@ function PersonnelDetailPanel({ row, subtotal, onSave, onClose }: {
 // PI Review panel
 // =====================================================================
 
-function PIReviewPanel({ status, piComment, onPiCommentChange, onSimulateDecision, onSendReply, onClose }: {
+function PIReviewPanel({ status, piComment, onPiCommentChange, onSimulateDecision, onSendReply, onClose, mainPi }: {
   status: 'idle'|'sent'|'approved'|'changes_requested';
   piComment: string; onPiCommentChange: (v: string) => void;
   onSimulateDecision: (d: 'approved'|'changes_requested') => void;
   onSendReply: () => void; onClose: () => void;
+  mainPi: { name: string; role: string } | null;
 }) {
+  const piName = mainPi?.name ? `Dr. ${mainPi.name}` : 'Main PI'
+  const piRole = mainPi?.role || 'Main PI'
+  const piEmail = mainPi?.name ? `${mainPi.name.toLowerCase().replace(/[^a-z]/g, '')}@university.edu` : 'mainpi@university.edu'
+  const piInitial = (mainPi?.name?.[0] ?? 'P').toUpperCase()
   const idleCfg = { dot: 'bg-amber-500', pill: 'bg-amber-50 border-amber-bd text-amber-700', label: 'Awaiting PI review' }
   const statusConfig: Record<typeof status, { dot: string; pill: string; label: string }> = {
     idle:              idleCfg,
@@ -2039,18 +2279,27 @@ function PIReviewPanel({ status, piComment, onPiCommentChange, onSimulateDecisio
           </div>
         </div>
         <div className="space-y-2">
-          <div className="text-[10px] uppercase tracking-widest text-sub font-semibold">Contact PI</div>
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-sage-100 text-sage-700 flex items-center justify-center text-[13px] font-bold">P</div>
-            <div>
-              <div className="text-[13px] font-semibold text-ink leading-tight">Dr. Harry Potter</div>
-              <div className="text-[11px] text-mute">Contact PI · School of Medicine · OD</div>
+          <div className="text-[10px] uppercase tracking-widest text-sub font-semibold">Main PI · Sole recipient</div>
+          {mainPi ? (
+            <>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-sage-100 text-sage-700 flex items-center justify-center text-[13px] font-bold">{piInitial}</div>
+                <div>
+                  <div className="text-[13px] font-semibold text-ink leading-tight">{piName}</div>
+                  <div className="text-[11px] text-mute">{piRole}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-sage-700">
+                <span>✉</span>
+                <a href={`mailto:${piEmail}`} className="underline underline-offset-2 decoration-dotted hover:text-sage-900">{piEmail}</a>
+              </div>
+              <p className="text-[10px] text-mute leading-relaxed">Review communication is sent only to the Main PI. Co-PIs are not notified.</p>
+            </>
+          ) : (
+            <div className="text-[12px] text-amber-700 bg-amber-50 border border-amber-bd rounded-md px-3 py-2">
+              No Main PI is assigned yet. Set a personnel row's role to <b>Main PI</b> in the worksheet so review communication has a recipient.
             </div>
-          </div>
-          <div className="flex items-center gap-1.5 text-[11px] text-sage-700">
-            <span>✉</span>
-            <a href="mailto:potterh@university.edu" className="underline underline-offset-2 decoration-dotted hover:text-sage-900">potterh@university.edu</a>
-          </div>
+          )}
           <div className="text-[10px] text-sub">+ Multi-PIs: Alastor Moody, Remus Lupin, Minerva McGonagall</div>
         </div>
         <div className="border-t border-bdLt" />
@@ -2120,13 +2369,34 @@ const Svg = ({ children }: { children: React.ReactNode }) => (
   </svg>
 )
 function UploadIcon()    { return <Svg><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></Svg> }
-function PaperclipIcon() { return <Svg><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></Svg> }
-function CheckIcon()     { return <Svg><polyline points="20 6 9 17 4 12" /></Svg> }
 function SendReviewIcon(){ return <Svg><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></Svg> }
 
 // =====================================================================
 // SCREEN — eGC1 Forms (auto-populated from Worksheet)
 // =====================================================================
+
+// Routing-step card used by the eGC1 submission view
+type StepStatus = 'done' | 'active' | 'waiting'
+function StepCard({ n, status, statusLabel, title, desc }: {
+  n: number; status: StepStatus; statusLabel: string; title: string; desc: string;
+}) {
+  const s = {
+    done:    { border: 'border-sage-100', bg: 'bg-sage-50',  badge: 'bg-sage-600',  pill: 'bg-sage-100 text-sage-700',   icon: '✓',  step: 'text-sage-700' },
+    active:  { border: 'border-amber-bd', bg: 'bg-amber-50', badge: 'bg-amber-500', pill: 'bg-amber-100 text-amber-700', icon: '⏳', step: 'text-amber-700' },
+    waiting: { border: 'border-bdLt',     bg: 'bg-surf2',    badge: 'bg-bd',        pill: 'bg-card text-sub border border-bdLt', icon: '○', step: 'text-sub' },
+  }[status]
+  return (
+    <div className={`border ${s.border} ${s.bg} rounded-xl p-4`}>
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className={`w-4 h-4 rounded-full ${s.badge} text-white flex items-center justify-center text-[9px] font-bold`}>{s.icon}</span>
+        <div className={`text-[10px] font-semibold uppercase tracking-widest ${s.step}`}>Step {n}</div>
+        <span className={`ml-auto text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${s.pill}`}>{statusLabel}</span>
+      </div>
+      <div className="text-[13px] font-semibold text-ink">{title}</div>
+      <div className="text-[12px] text-mute mt-1 leading-relaxed">{desc}</div>
+    </div>
+  )
+}
 
 export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitted }: Nav) {
   const isFilled = rows.some(r => r.label !== '' || r.amount || r.monthlySalary)
@@ -2161,17 +2431,23 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
           { label: 'Submitted' },
         ]} />
 
-        <div className="px-6 py-2.5 border-b border-sage-100 bg-sage-50 text-sage-700 text-[12px] flex items-center gap-3">
-          <span className="w-5 h-5 rounded-full bg-sage-600 text-white flex items-center justify-center text-[11px] font-bold">✓</span>
-          <span className="font-medium flex items-center gap-2">
+        <div className="px-6 py-2.5 border-b border-sage-100 bg-sage-50 text-sage-700 text-[12px] flex items-center gap-3 flex-wrap">
+          <span className="w-5 h-5 rounded-full bg-sage-600 text-white flex items-center justify-center text-[11px] font-bold shrink-0">✓</span>
+          <span className="font-medium flex items-center gap-1.5 flex-wrap">
             <span className="text-sage-700">Submitted</span>
             <span className="text-sage-400">→</span>
-            <span className="text-sage-700">Pending OSP</span>
+            <span className="text-sage-700">Department</span>
             <span className="text-sage-400">→</span>
-            <span className="text-sage-500 font-normal">Awaiting NoA</span>
+            <span className="text-amber-700 font-semibold">Dept Chair</span>
+            <span className="text-sage-400">→</span>
+            <span className="text-sub font-normal">Central Admin</span>
+            <span className="text-sage-400">→</span>
+            <span className="text-sub font-normal">OSP</span>
+            <span className="text-sage-400">→</span>
+            <span className="text-sub font-normal">Awaiting NoA</span>
           </span>
           <div className="flex-1" />
-          <button onClick={() => go('workspace')} className="text-[11px] underline">Edit Worksheet copy ↗</button>
+          <button onClick={() => go('workspace')} className="text-[11px] underline shrink-0">Edit Worksheet copy ↗</button>
         </div>
 
         <div className="flex-1 overflow-auto px-8 py-10">
@@ -2186,30 +2462,12 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
               </p>
 
               <div className="mt-7 grid grid-cols-3 gap-3 text-left">
-                <div className="border border-sage-100 bg-sage-50 rounded-xl p-4">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="w-4 h-4 rounded-full bg-sage-600 text-white flex items-center justify-center text-[9px] font-bold">✓</span>
-                    <div className="text-[11px] text-sage-700 font-semibold uppercase tracking-widest">Step 1 · Done</div>
-                  </div>
-                  <div className="text-[13px] font-semibold text-ink">Submitted</div>
-                  <div className="text-[12px] text-mute mt-1">eGC1 submitted to Department for routing.</div>
-                </div>
-                <div className="border border-amber-bd bg-amber-50 rounded-xl p-4">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[9px] font-bold">⏳</span>
-                    <div className="text-[11px] text-amber-700 font-semibold uppercase tracking-widest">Step 2 · Active</div>
-                  </div>
-                  <div className="text-[13px] font-semibold text-ink">Pending OSP</div>
-                  <div className="text-[12px] text-mute mt-1">OSP is reviewing the budget before sponsor submission.</div>
-                </div>
-                <div className="border border-bdLt bg-surf2 rounded-xl p-4">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="w-4 h-4 rounded-full bg-bd text-white flex items-center justify-center text-[9px] font-bold">○</span>
-                    <div className="text-[11px] text-sub font-semibold uppercase tracking-widest">Step 3 · Next</div>
-                  </div>
-                  <div className="text-[13px] font-semibold text-ink">Awaiting NoA</div>
-                  <div className="text-[12px] text-mute mt-1">Upload the Notice of Award once sponsor approval arrives.</div>
-                </div>
+                <StepCard n={1} status="done"    statusLabel="Reviewed" title="Submitted"     desc="eGC1 submitted from Worksheet for routing." />
+                <StepCard n={2} status="done"    statusLabel="Reviewed" title="Department"    desc="Departmental staff verified the budget and routed it forward." />
+                <StepCard n={3} status="active"  statusLabel="In Review" title="Dept Chair"   desc="The Department Chair is currently reviewing this submission." />
+                <StepCard n={4} status="waiting" statusLabel="Pending"  title="Central Admin" desc="Awaits sign-off from the school/college central administrator." />
+                <StepCard n={5} status="waiting" statusLabel="Pending"  title="OSP Review"    desc="Office of Sponsored Programs will review before sponsor submission." />
+                <StepCard n={6} status="waiting" statusLabel="Next"     title="Awaiting NoA"  desc="Upload the Notice of Award once sponsor approval arrives." />
               </div>
 
               <div className="mt-7 flex items-center justify-center gap-3">
@@ -2224,7 +2482,7 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
                 <Row k="eGC1" v="A224134 · Test 1" />
                 <Row k="SAGE Budget" v="B158116" />
                 <Row k="PI" v="Harry Potter" />
-                <Row k="Status" v="Submitted → Pending OSP → Awaiting NoA" highlight />
+                <Row k="Status" v="Department ✓ → Dept Chair (In Review) → Central Admin → OSP → NoA" highlight />
                 <Row k="Direct costs" v={`$${codeTotal.toLocaleString()}`} />
                 <Row k="Project total" v={`$${totals.total.toLocaleString()}`} highlight />
               </div>
@@ -3064,11 +3322,11 @@ export function FilesScreen({ toast, noaUploaded, egc1Submitted }: Nav) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-page">
-      <Breadcrumb trail={[{ label: 'Files' }, { label: 'A224134 · Test 1' }]} />
+      <Breadcrumb trail={[{ label: 'Documents' }, { label: 'A224134 · Test 1' }]} />
       <div className="p-8 flex-1 overflow-auto max-w-[1100px] w-full">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h2 className="text-[22px] font-semibold">Files</h2>
+            <h2 className="text-[22px] font-semibold">Documents</h2>
             <p className="text-[13px] text-mute mt-1">All documents linked to this budget — NoAs, invoices, exports, references.</p>
           </div>
           <div className="flex bg-card border border-bdLt rounded-lg overflow-hidden">
@@ -3174,7 +3432,7 @@ function BudgetDetailView(props: Nav) {
   const [section, setSection] = useState<'summary'|'worksheet'>('summary')
 
   // Map workspace rows to SAGE Budget summary groups
-  const piRows = rows.filter(r => r.category === 'personnel' && r.roleType === 'PI')
+  const piRows = rows.filter(r => r.category === 'personnel' && (r.roleType === 'Main-PI' || r.roleType === 'Co-PI'))
   const raRows = rows.filter(r => r.category === 'personnel' && (r.roleType === 'Grad-PhD' || r.roleType === 'Grad-Master'))
   const fringeRow = rows.find(r => r.category === 'fringe')
   const piSalaryTotal = piRows.reduce((s, r) => s + computeSubtotal(r, rows), 0)
