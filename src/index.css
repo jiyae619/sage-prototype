@@ -48,3 +48,31 @@ body { background: var(--color-page); color: var(--color-ink); font-family: 'Int
   }
 }
 .animate-mismatch-pulse { animation: mismatch-pulse 1.4s ease-in-out infinite; }
+
+/* Worksheet grid — hover/focus affordance for editable and clickable cells */
+.worksheet-cell-interactive {
+  border-radius: 4px;
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+.worksheet-cell-interactive:hover {
+  background-color: rgba(255, 255, 255, 0.94);
+  box-shadow: inset 0 0 0 1px rgba(63, 140, 86, 0.42);
+}
+.worksheet-cell-interactive:focus-within {
+  background-color: #fff;
+  box-shadow: inset 0 0 0 2px rgba(63, 140, 86, 0.62);
+}
+
+.worksheet-cell-clickable {
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+.worksheet-cell-clickable:hover {
+  background-color: rgba(234, 244, 238, 0.95);
+  box-shadow: inset 0 0 0 1px rgba(63, 140, 86, 0.5);
+}
+.worksheet-cell-clickable:focus-visible {
+  outline: 2px solid rgba(63, 140, 86, 0.65);
+  outline-offset: -2px;
+}

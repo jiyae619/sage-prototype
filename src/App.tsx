@@ -12,6 +12,11 @@ import {
   type WorkspaceRow,
   BLANK_ROWS,
 } from './screens'
+import {
+  captureAppStateForScene,
+  getCaptureScene,
+  workspaceCaptureUiForScene,
+} from './captureScenes'
 
 type GuidedStep = TutorialStep & {
   tab: TabKey;
@@ -99,12 +104,16 @@ const TUTORIAL_STEPS: GuidedStep[] = [
 ]
 
 export default function App() {
-  const [tab, setTab] = useState<TabKey>('workspace')
-  const [awardsStep, setAwardsStep] = useState<AwardsStep>('noa')
+  const captureScene = getCaptureScene()
+  const capturePreset = captureAppStateForScene(captureScene)
+
+  const [tab, setTab] = useState<TabKey>(capturePreset.tab ?? 'workspace')
+  const [awardsStep, setAwardsStep] = useState<AwardsStep>(capturePreset.awardsStep ?? 'noa')
   const [toastMsg, setToastMsg] = useState('')
   const [toastOn, setToastOn] = useState(false)
   const [aiOn, setAiOn] = useState(true)
   const [tutorialMode, setTutorialMode] = useState(() => {
+    if (capturePreset.tutorialMode === false) return false
     if (typeof window === 'undefined') return true
     return window.localStorage.getItem('sage-tutorial-seen') !== 'true'
   })
@@ -112,12 +121,12 @@ export default function App() {
   const [tutorialBubbleHidden, setTutorialBubbleHidden] = useState(false)
 
   // Cross-tab shared state
-  const [issues, setIssues] = useState<Issue[]>([]) // empty until reconciliation activates
-  const [rows, setRows] = useState<WorkspaceRow[]>(BLANK_ROWS)
-  const [proposedTotal, setProposedTotal] = useState<number>(0)
-  const [noaUploaded, setNoaUploaded] = useState(false)
-  const [reconciliationActive, setReconciliationActive] = useState(false)
-  const [egc1Submitted, setEgc1Submitted] = useState(false)
+  const [issues, setIssues] = useState<Issue[]>(capturePreset.issues ?? [])
+  const [rows, setRows] = useState<WorkspaceRow[]>(capturePreset.rows ?? BLANK_ROWS)
+  const [proposedTotal, setProposedTotal] = useState<number>(capturePreset.proposedTotal ?? 0)
+  const [noaUploaded, setNoaUploaded] = useState(capturePreset.noaUploaded ?? false)
+  const [reconciliationActive, setReconciliationActive] = useState(capturePreset.reconciliationActive ?? false)
+  const [egc1Submitted, setEgc1Submitted] = useState(capturePreset.egc1Submitted ?? false)
   const [openBudgetId, setOpenBudgetId] = useState<string | null>(null)
   const [asrSubmitCount, setAsrSubmitCount] = useState(0)
 
@@ -216,7 +225,12 @@ export default function App() {
     <div className="h-screen flex flex-col">
       <TopNav active={tab} onJump={go} tutorialMode={tutorialMode} onTutorialModeChange={setTutorial} />
       <main className="flex-1 overflow-hidden flex">
-        {tab === 'workspace' && <WorkspaceScreen {...props} />}
+        {tab === 'workspace' && (
+          <WorkspaceScreen
+            {...props}
+            captureUi={workspaceCaptureUiForScene(captureScene)}
+          />
+        )}
         {tab === 'egc1'      && <EGC1FormsScreen {...props} />}
         {tab === 'awards'    && <AwardsScreen   {...props} />}
         {tab === 'files'     && <FilesScreen    {...props} />}
