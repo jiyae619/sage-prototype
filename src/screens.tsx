@@ -52,7 +52,7 @@ export const BLANK_ROWS: WorkspaceRow[] = [
   { id: 'fa',     cellRef: 'F15', category: 'fa',        label: '', role: '', excludedFromMtdc: true },
 ]
 
-const AI_PREFILL: WorkspaceRow[] = [
+export const AI_PREFILL: WorkspaceRow[] = [
   { id: 'per1',   cellRef: 'F4',  category: 'personnel', label: 'Harry Potter',       role: 'Main PI · OD',        roleType: 'Main-PI',     monthlySalary: 16826, effortPct: 10, months: 9 },
   { id: 'per2',   cellRef: 'F5',  category: 'personnel', label: 'Alastor Moody',      role: 'Co-PI · OD',          roleType: 'Co-PI',       monthlySalary: 16822, effortPct: 5,  months: 9 },
   { id: 'per3',   cellRef: 'F6',  category: 'personnel', label: 'Remus Lupin',        role: 'Co-PI',               roleType: 'Co-PI',       monthlySalary: 16822, effortPct: 5,  months: 9 },
@@ -344,30 +344,36 @@ function Breadcrumb({ trail }: { trail: { label: string; onClick?: () => void }[
 // SCREEN — WORKSPACE (blank Excel + formulas + reconciliation gate)
 // =====================================================================
 
-export function WorkspaceScreen(props: Nav) {
+export function WorkspaceScreen(props: Nav & {
+  captureUi?: { historyOpen: boolean; addinOpen: boolean; mismatchView: boolean }
+}) {
   const {
     go, goAwards, toast, aiOn,
     issues, setIssues, rows, setRows,
     proposedTotal, setProposedTotal,
     reconciliationActive, egc1Submitted,
+    captureUi,
   } = props
-  const [selectedRow, setSelectedRow] = useState<string | null>(null)
+  const [selectedRow, setSelectedRow] = useState<string | null>(
+    captureUi?.mismatchView ? 'fa' : null
+  )
   const [workspaceTitle, setWorkspaceTitle] = useState('Test 1')
   const [titleEditing, setTitleEditing] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   const TITLE_SUGGESTION = 'Eye Conditions Evaluation'
   const [pdfOpen, setPdfOpen] = useState(false)
-  const [addinOpen, setAddinOpen] = useState(false)
-  const [mismatchView, setMismatchView] = useState(false)
+  const [addinOpen, setAddinOpen] = useState(captureUi?.addinOpen ?? false)
+  const [mismatchView, setMismatchView] = useState(captureUi?.mismatchView ?? false)
   const [piReviewOpen, setPiReviewOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(captureUi?.historyOpen ?? false)
   const [piReviewStatus, setPiReviewStatus] = useState<'idle'|'sent'|'approved'|'changes_requested'>('idle')
   const [personnelPanelRowId, setPersonnelPanelRowId] = useState<string | null>(null)
   const [aiThinking] = useState(false)
   const [piComment, setPiComment] = useState('')
   const [raDepartmentId, setRaDepartmentId] = useState('')
   const [mismatchIndex, setMismatchIndex] = useState(0)
+  const [mismatchResolveClicked, setMismatchResolveClicked] = useState(false)
   const raDepartment = UW_VARIABLE_RA_DEPARTMENTS.find(d => d.id === raDepartmentId) ?? UW_VARIABLE_RA_DEPARTMENTS[0]
 
   const NOA_TOTAL = 267006
@@ -385,16 +391,26 @@ export function WorkspaceScreen(props: Nav) {
     toast('AI prefilled rows from 3 similar NIH R34 vision proposals.')
   }
 
-  function copyProposalBudget(rowsToCopy: WorkspaceRow[]) {
+  function copyProposalBudget(rowsToCopy: WorkspaceRow[]): () => void {
+    const previous = rows.map(r => ({ ...r }))
     setRows(rowsToCopy.map(r => ({ ...r })))
     toast('Budget copied to the current budget.')
+    return () => {
+      setRows(previous)
+      toast('Copy undone — worksheet restored.')
+    }
   }
 
-  function copyProposalSection(sectionTitle: string, sectionRows: WorkspaceRow[]) {
+  function copyProposalSection(sectionTitle: string, sectionRows: WorkspaceRow[]): () => void {
+    const previous = rows.map(r => ({ ...r }))
     // Only the copied section is populated — every other row is reset to blank.
     const byId = new Map(sectionRows.map(r => [r.id, r]))
     setRows(BLANK_ROWS.map(r => { const src = byId.get(r.id); return src ? { ...src } : { ...r } }))
     toast(`${sectionTitle} has been copied to the current budget.`)
+    return () => {
+      setRows(previous)
+      toast('Section copy undone — worksheet restored.')
+    }
   }
 
   function updateRow(id: string, patch: Partial<WorkspaceRow>) {
@@ -571,8 +587,9 @@ export function WorkspaceScreen(props: Nav) {
           </button>
         )}
         {reconciliationActive && issues.length > 0 && (
-          <button onClick={() => openMismatch(0)}
-            className="ml-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-red text-white text-[12px] font-bold shadow-[0_0_0_0_rgba(185,28,28,0.55)] hover:bg-red transition animate-mismatch-pulse">
+          <button
+            onClick={() => { setMismatchResolveClicked(true); openMismatch(0) }}
+            className={`ml-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-red text-white text-[12px] font-bold shadow-[0_0_0_0_rgba(185,28,28,0.55)] hover:bg-red transition${mismatchResolveClicked ? '' : ' animate-mismatch-pulse'}`}>
             <span aria-hidden>⚠</span>
             {issues.length} mismatch{issues.length > 1 ? 'es' : ''} · Resolve →
           </button>
@@ -670,6 +687,11 @@ export function WorkspaceScreen(props: Nav) {
                     const isSel = selectedRow === r.id
                     const sub = computeSubtotal(r, rows)
                     const hasIssue = reconciliationActive && issues.some(i => i.cellRef === r.cellRef)
+                    const rowOpensPanel =
+                      (r.category === 'personnel' && !!r.roleType) ||
+                      (r.id === 'fa' && hasIssue) ||
+                      (r.id === 'eq' && pdfOpen)
+                    const isEditableCell = r.category !== 'fringe' && r.category !== 'fa'
                     return (
                       <div key={r.id}
                         onClick={() => {
@@ -679,93 +701,101 @@ export function WorkspaceScreen(props: Nav) {
                           else if (r.category === 'personnel' && r.roleType) { setAddinOpen(true); setMismatchView(false) }
                           else if (r.id === 'fa' && hasIssue) { setAddinOpen(true); setMismatchView(true) }
                         }}
-                        className={`grid grid-cols-[40px_minmax(220px,1.4fr)_minmax(150px,1fr)_100px_60px_60px_100px_120px] border-b border-bdLt h-9 text-[12px] cursor-pointer transition ${
+                        className={`grid grid-cols-[40px_minmax(220px,1.4fr)_minmax(150px,1fr)_100px_60px_60px_100px_120px] border-b border-bdLt h-9 text-[12px] transition ${
                           hasIssue ? 'bg-red-50/60'
                           : isSel ? 'bg-sage-50'
                           : (r.id === 'eq' && pdfOpen) ? 'bg-yellow-hi'
                           : r.autoPopulated && !r.verified ? 'bg-purple-100/40'
-                          : 'hover:bg-surf2'
+                          : rowOpensPanel ? 'cursor-pointer'
+                          : ''
                         }`}>
                         <div className={`border-r h-full flex items-center justify-center text-[10px] ${
                           hasIssue ? 'bg-red text-white font-bold border-red'
                           : (r.id === 'eq' && pdfOpen) ? 'bg-amber-bd text-white font-bold border-amber-bd'
                           : 'border-bdLt text-mute'
-                        }`}>{r.cellRef}</div>
+                        } ${rowOpensPanel ? 'worksheet-cell-clickable' : ''}`}>{r.cellRef}</div>
 
                         {/* Description */}
-                        <div className="px-2 border-r border-bdLt flex items-center">
-                          {r.category === 'fringe' || r.category === 'fa' ? (
-                            <span className="text-ink">{r.label}</span>
+                        <div className="px-1 border-r border-bdLt flex items-center min-w-0">
+                          {isEditableCell ? (
+                            <div className="worksheet-cell-interactive w-full min-w-0 px-1 py-0.5 flex items-center min-h-[28px]">
+                              <AISuggestInput
+                                value={r.label}
+                                onChange={v => updateRow(r.id, { label: v })}
+                                onClick={e => e.stopPropagation()}
+                                placeholder={r.category === 'personnel' ? 'Name…' : 'Item…'}
+                                suggestions={AI_LABEL_SUGGESTIONS[r.category] || []}
+                                aiOn={aiOn}
+                                tutorialTarget={r.id === 'per1' ? 'name-input' : undefined}
+                              />
+                            </div>
                           ) : (
-                            <AISuggestInput
-                              value={r.label}
-                              onChange={v => updateRow(r.id, { label: v })}
-                              onClick={e => e.stopPropagation()}
-                              placeholder={r.category === 'personnel' ? 'Name…' : 'Item…'}
-                              suggestions={AI_LABEL_SUGGESTIONS[r.category] || []}
-                              aiOn={aiOn}
-                              tutorialTarget={r.id === 'per1' ? 'name-input' : undefined}
-                            />
+                            <span className="px-2 text-ink">{r.label}</span>
                           )}
                         </div>
 
                         {/* Role */}
-                        <div className="px-2 border-r border-bdLt flex items-center gap-1.5">
+                        <div className="px-1 border-r border-bdLt flex items-center gap-1.5 min-w-0">
                           {r.category === 'fringe' || r.category === 'fa' ? (
-                            <span className="text-mute text-[11px]">{r.role}</span>
+                            <span className="px-2 text-mute text-[11px]">{r.role}</span>
                           ) : r.category === 'personnel' ? (
-                            <select
-                              value={r.roleType || ''}
-                              onChange={e => {
-                                const newRole = e.target.value as RowRole
-                                // Enforce only one Main PI per worksheet — Co-PIs can be multiple.
-                                if (newRole === 'Main-PI') {
-                                  const existing = rows.find(x => x.id !== r.id && x.roleType === 'Main-PI')
-                                  if (existing) {
-                                    toast(`Main PI is already assigned${existing.label ? ` to ${existing.label}` : ''}. Use Co-PI for additional PIs.`)
+                            <div className="worksheet-cell-interactive w-full min-w-0 px-1 py-0.5 flex items-center min-h-[28px]">
+                              <select
+                                value={r.roleType || ''}
+                                onChange={e => {
+                                  const newRole = e.target.value as RowRole
+                                  // Enforce only one Main PI per worksheet — Co-PIs can be multiple.
+                                  if (newRole === 'Main-PI') {
+                                    const existing = rows.find(x => x.id !== r.id && x.roleType === 'Main-PI')
+                                    if (existing) {
+                                      toast(`Main PI is already assigned${existing.label ? ` to ${existing.label}` : ''}. Use Co-PI for additional PIs.`)
+                                      return
+                                    }
+                                  }
+                                  // 'Other' is fully custom — leave every field empty for the user to fill in.
+                                  if (newRole === 'Other') {
+                                    updateRow(r.id, { roleType: newRole })
+                                    setAddinOpen(true); setSelectedRow(r.id)
                                     return
                                   }
-                                }
-                                // 'Other' is fully custom — leave every field empty for the user to fill in.
-                                if (newRole === 'Other') {
-                                  updateRow(r.id, { roleType: newRole })
-                                  setAddinOpen(true); setSelectedRow(r.id)
-                                  return
-                                }
-                                const cfg = roleConfigFor(newRole)
-                                updateRow(r.id, {
-                                  roleType: newRole,
-                                  monthlySalary: r.monthlySalary || cfg?.monthlySalary,
-                                  effortPct:     r.effortPct     || (cfg ? Number(cfg.fteLabel.replace(/[^0-9]/g, '')) || 50 : undefined),
-                                  months:        r.months        || 9,
-                                  inflationRate: r.inflationRate ?? 3,
-                                  role:          r.role          || (cfg ? `${cfg.posType} · ${cfg.level}` : ''),
-                                })
-                                if (newRole) { setAddinOpen(true); setSelectedRow(r.id) }
-                              }}
-                              onClick={e => e.stopPropagation()}
-                              data-tutorial-target={r.id === 'per1' ? 'role-select' : undefined}
-                              className={`w-full bg-transparent text-[12px] outline-none focus:bg-white focus:px-1 focus:rounded focus:ring-1 focus:ring-sage-500 ${
-                                r.roleType ? 'text-ink font-medium' : 'text-sub italic'
-                              }`}>
-                              <option value="">Select role…</option>
-                              <option value="Main-PI">Main PI</option>
-                              <option value="Co-PI">Co-PI</option>
-                              <option value="Grad-PhD">Grad-PhD</option>
-                              <option value="Grad-Master">Grad-Master</option>
-                              <option value="Bachelor">Bachelor</option>
-                              <option value="TBD-Subaward">TBD / Subaward</option>
-                              <option value="Other">Other</option>
-                            </select>
+                                  const cfg = roleConfigFor(newRole)
+                                  updateRow(r.id, {
+                                    roleType: newRole,
+                                    monthlySalary: r.monthlySalary || cfg?.monthlySalary,
+                                    effortPct:     r.effortPct     || (cfg ? Number(cfg.fteLabel.replace(/[^0-9]/g, '')) || 50 : undefined),
+                                    months:        r.months        || 9,
+                                    inflationRate: r.inflationRate ?? 3,
+                                    role:          r.role          || (cfg ? `${cfg.posType} · ${cfg.level}` : ''),
+                                  })
+                                  if (newRole) { setAddinOpen(true); setSelectedRow(r.id) }
+                                }}
+                                onClick={e => e.stopPropagation()}
+                                data-tutorial-target={r.id === 'per1' ? 'role-select' : undefined}
+                                aria-label={`Role for ${r.label || 'personnel row'}`}
+                                className={`w-full bg-transparent text-[12px] outline-none cursor-pointer ${
+                                  r.roleType ? 'text-ink font-medium' : 'text-sub italic'
+                                }`}>
+                                <option value="">Select role…</option>
+                                <option value="Main-PI">Main PI</option>
+                                <option value="Co-PI">Co-PI</option>
+                                <option value="Grad-PhD">Grad-PhD</option>
+                                <option value="Grad-Master">Grad-Master</option>
+                                <option value="Bachelor">Bachelor</option>
+                                <option value="TBD-Subaward">TBD / Subaward</option>
+                                <option value="Other">Other</option>
+                              </select>
+                            </div>
                           ) : (
-                            <AISuggestInput
-                              value={r.role}
-                              onChange={v => updateRow(r.id, { role: v })}
-                              onClick={e => e.stopPropagation()}
-                              placeholder="Description…"
-                              suggestions={AI_ROLE_SUGGESTIONS[r.category] || []}
-                              aiOn={aiOn}
-                            />
+                            <div className="worksheet-cell-interactive w-full min-w-0 px-1 py-0.5 flex items-center min-h-[28px]">
+                              <AISuggestInput
+                                value={r.role}
+                                onChange={v => updateRow(r.id, { role: v })}
+                                onClick={e => e.stopPropagation()}
+                                placeholder="Description…"
+                                suggestions={AI_ROLE_SUGGESTIONS[r.category] || []}
+                                aiOn={aiOn}
+                              />
+                            </div>
                           )}
                           {r.autoPopulated && !r.verified && (
                             <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-purple-100 text-purple-700 shrink-0">✦ AI</span>
@@ -773,38 +803,48 @@ export function WorkspaceScreen(props: Nav) {
                         </div>
 
                         {/* Salary / Rate / Amount */}
-                        <div className="px-2 border-r border-bdLt flex items-center justify-end tabular-nums">
-                          {r.category === 'personnel' && (
-                            <NumSuggestInput value={r.monthlySalary} onChange={v => updateRow(r.id, { monthlySalary: v })} prefix="$" placeholder="/mo" suggestions={AI_SALARY_SUGGESTIONS[r.id]} aiOn={aiOn} />
-                          )}
-                          {r.category === 'fringe' && (
-                            <NumSuggestInput value={r.fringeRate} onChange={v => updateRow(r.id, { fringeRate: v })} suffix="%" placeholder="rate" suggestions={AI_SALARY_SUGGESTIONS['fringe']} aiOn={aiOn} />
-                          )}
-                          {r.category === 'tuition' && (
-                            <NumSuggestInput value={r.tuitionPerQuarter} onChange={v => updateRow(r.id, { tuitionPerQuarter: v })} prefix="$" placeholder="/qtr" suggestions={AI_SALARY_SUGGESTIONS['tuit']} aiOn={aiOn} />
-                          )}
-                          {r.category === 'fa' && (
-                            <NumSuggestInput value={r.faRate} onChange={v => updateRow(r.id, { faRate: v })} suffix="%" placeholder="rate" suggestions={[57.5, 26, 10, 8]} aiOn={aiOn} />
-                          )}
-                          {(r.category === 'travel' || r.category === 'supplies' || r.category === 'equipment') && (
-                            <NumSuggestInput value={r.amount} onChange={v => updateRow(r.id, { amount: v })} prefix="$" placeholder="amount" suggestions={AI_SALARY_SUGGESTIONS[r.id]} aiOn={aiOn} />
+                        <div className="px-1 border-r border-bdLt flex items-center justify-end tabular-nums min-w-0">
+                          {(r.category === 'personnel' || r.category === 'fringe' || r.category === 'tuition' || r.category === 'fa' || r.category === 'travel' || r.category === 'supplies' || r.category === 'equipment') && (
+                            <div className="worksheet-cell-interactive w-full min-w-0 px-1 py-0.5 flex items-center justify-end min-h-[28px]">
+                              {r.category === 'personnel' && (
+                                <NumSuggestInput value={r.monthlySalary} onChange={v => updateRow(r.id, { monthlySalary: v })} prefix="$" placeholder="/mo" suggestions={AI_SALARY_SUGGESTIONS[r.id]} aiOn={aiOn} />
+                              )}
+                              {r.category === 'fringe' && (
+                                <NumSuggestInput value={r.fringeRate} onChange={v => updateRow(r.id, { fringeRate: v })} suffix="%" placeholder="rate" suggestions={AI_SALARY_SUGGESTIONS['fringe']} aiOn={aiOn} />
+                              )}
+                              {r.category === 'tuition' && (
+                                <NumSuggestInput value={r.tuitionPerQuarter} onChange={v => updateRow(r.id, { tuitionPerQuarter: v })} prefix="$" placeholder="/qtr" suggestions={AI_SALARY_SUGGESTIONS['tuit']} aiOn={aiOn} />
+                              )}
+                              {r.category === 'fa' && (
+                                <NumSuggestInput value={r.faRate} onChange={v => updateRow(r.id, { faRate: v })} suffix="%" placeholder="rate" suggestions={[57.5, 26, 10, 8]} aiOn={aiOn} />
+                              )}
+                              {(r.category === 'travel' || r.category === 'supplies' || r.category === 'equipment') && (
+                                <NumSuggestInput value={r.amount} onChange={v => updateRow(r.id, { amount: v })} prefix="$" placeholder="amount" suggestions={AI_SALARY_SUGGESTIONS[r.id]} aiOn={aiOn} />
+                              )}
+                            </div>
                           )}
                         </div>
 
                         {/* Effort % */}
-                        <div className="px-2 border-r border-bdLt flex items-center justify-end tabular-nums">
+                        <div className="px-1 border-r border-bdLt flex items-center justify-end tabular-nums min-w-0">
                           {r.category === 'personnel' && (
-                            <NumSuggestInput value={r.effortPct} onChange={v => updateRow(r.id, { effortPct: v })} suffix="%" placeholder="—" suggestions={AI_EFFORT_SUGGESTIONS[r.id]} aiOn={aiOn} />
+                            <div className="worksheet-cell-interactive w-full min-w-0 px-1 py-0.5 flex items-center justify-end min-h-[28px]">
+                              <NumSuggestInput value={r.effortPct} onChange={v => updateRow(r.id, { effortPct: v })} suffix="%" placeholder="—" suggestions={AI_EFFORT_SUGGESTIONS[r.id]} aiOn={aiOn} />
+                            </div>
                           )}
                           {r.category === 'tuition' && (
-                            <NumInput value={r.numStudents} onChange={v => updateRow(r.id, { numStudents: v })} placeholder="# stu" />
+                            <div className="worksheet-cell-interactive w-full min-w-0 px-1 py-0.5 flex items-center justify-end min-h-[28px]">
+                              <NumInput value={r.numStudents} onChange={v => updateRow(r.id, { numStudents: v })} placeholder="# stu" />
+                            </div>
                           )}
                         </div>
 
                         {/* Months */}
-                        <div className="px-2 border-r border-bdLt flex items-center justify-end tabular-nums">
+                        <div className="px-1 border-r border-bdLt flex items-center justify-end tabular-nums min-w-0">
                           {(r.category === 'personnel' || r.category === 'tuition') && (
-                            <NumSuggestInput value={r.months} onChange={v => updateRow(r.id, { months: v })} placeholder="—" suggestions={AI_MONTHS_SUGGESTIONS[r.id]} aiOn={aiOn} />
+                            <div className="worksheet-cell-interactive w-full min-w-0 px-1 py-0.5 flex items-center justify-end min-h-[28px]">
+                              <NumSuggestInput value={r.months} onChange={v => updateRow(r.id, { months: v })} placeholder="—" suggestions={AI_MONTHS_SUGGESTIONS[r.id]} aiOn={aiOn} />
+                            </div>
                           )}
                         </div>
 
@@ -816,7 +856,9 @@ export function WorkspaceScreen(props: Nav) {
                         </div>
 
                         {/* Source / note */}
-                        <div className="px-2 flex items-center text-[10px] text-mute truncate">
+                        <div className={`px-1 flex items-center text-[10px] text-mute truncate min-w-0 ${
+                          r.id === 'eq' && pdfOpen ? 'worksheet-cell-clickable px-2' : 'px-2'
+                        }`}>
                           {r.category === 'personnel' && r.monthlySalary ? <span className="inline-flex items-center gap-1"><span className="w-1 h-1 rounded-full bg-sage-500" /> Workday</span> : null}
                           {r.category === 'fringe' && r.fringeRate ? 'OPB rate table' : null}
                           {r.category === 'tuition' && r.tuitionPerQuarter ? 'OPB FY24' : null}
@@ -1056,7 +1098,7 @@ function ProposalFilter({ label, value, onChange, options }: {
       value={value}
       onChange={e => onChange(e.target.value)}
       aria-label={`Filter by ${label}`}
-      className="px-2 py-1 border border-bd rounded text-[12px] bg-white focus:outline-none focus:border-sage-500">
+      className="w-[7.25rem] max-w-[7.25rem] shrink-0 px-2 py-1 border border-bd rounded text-[12px] bg-white focus:outline-none focus:border-sage-500 truncate">
       <option value="">All {label}</option>
       {options.map(o => <option key={o} value={o}>{o}</option>)}
     </select>
@@ -1065,11 +1107,82 @@ function ProposalFilter({ label, value, onChange, options }: {
 
 type ProposalSort = 'recent' | 'budget' | 'pi'
 
+function proposalBudgetCopyKey(proposalId: string) {
+  return `budget:${proposalId}`
+}
+
+function proposalSectionCopyKey(proposalId: string, sectionTitle: string, period: number) {
+  return `section:${proposalId}:${sectionTitle}:p${period}`
+}
+
+function ProposalCopyButtons({ copied, copyLabel, onCopy, onUndo, size = 'sm', stopPropagation = false }: {
+  copied: boolean;
+  copyLabel: string;
+  onCopy: () => void;
+  onUndo: (e: React.MouseEvent) => void;
+  size?: 'sm' | 'md';
+  stopPropagation?: boolean;
+}) {
+  const wrapClick = (fn: () => void) => (e: React.MouseEvent) => {
+    if (stopPropagation) e.stopPropagation()
+    fn()
+  }
+
+  if (copied) {
+    return (
+      <div
+        className="inline-flex items-center gap-1.5"
+        onClick={stopPropagation ? e => e.stopPropagation() : undefined}>
+        <span className={
+          size === 'md'
+            ? 'px-3 py-2 rounded-lg bg-emerald-100 text-emerald-800 text-[13px] font-semibold whitespace-nowrap'
+            : 'px-2 py-1 rounded-md bg-emerald-100 text-emerald-800 text-[11px] font-semibold whitespace-nowrap'
+        }>
+          Copied
+        </span>
+        <button
+          onClick={onUndo}
+          className={
+            size === 'md'
+              ? 'px-4 py-2 rounded-lg border border-bd bg-white text-[13px] font-semibold hover:bg-surf2 transition whitespace-nowrap'
+              : 'px-2.5 py-1.5 rounded-md border border-bd bg-white text-[11px] font-semibold text-ink hover:bg-surf2 transition whitespace-nowrap'
+          }
+          aria-label={`Undo ${copyLabel.toLowerCase()}`}>
+          Undo
+        </button>
+      </div>
+    )
+  }
+
+  if (size === 'md') {
+    return (
+      <button
+        onClick={wrapClick(onCopy)}
+        className="px-4 py-2 rounded-lg bg-purple-700 text-white text-[13px] font-semibold hover:opacity-90 transition whitespace-nowrap">
+        {copyLabel}
+      </button>
+    )
+  }
+
+  const isSection = copyLabel.toLowerCase().includes('section')
+  return (
+    <button
+      onClick={wrapClick(onCopy)}
+      className={
+        isSection
+          ? 'px-2.5 py-1 rounded-md border border-purple-700/40 text-purple-700 text-[10px] font-semibold hover:bg-purple-100/60 transition shrink-0 whitespace-nowrap'
+          : 'px-3 py-1.5 rounded-md bg-purple-700 text-white text-[11px] font-semibold hover:opacity-90 transition whitespace-nowrap'
+      }>
+      {copyLabel}
+    </button>
+  )
+}
+
 function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
   open: boolean;
   onClose: () => void;
-  onCopy: (rows: WorkspaceRow[]) => void;
-  onCopySection: (sectionTitle: string, rows: WorkspaceRow[]) => void;
+  onCopy: (rows: WorkspaceRow[]) => () => void;
+  onCopySection: (sectionTitle: string, rows: WorkspaceRow[]) => () => void;
 }) {
   const [fName, setFName] = useState('')
   const [fSponsor, setFSponsor] = useState('')
@@ -1077,8 +1190,34 @@ function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
   const [fPi, setFPi] = useState('')
   const [sortBy, setSortBy] = useState<ProposalSort>('recent')
   const [detail, setDetail] = useState<PastProposal | null>(null)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const undoCopyRef = useRef<(() => void) | null>(null)
 
   if (!open) return null
+
+  function handleCopyBudget(proposalId: string, rowsToCopy: WorkspaceRow[]) {
+    undoCopyRef.current = onCopy(rowsToCopy)
+    setCopiedKey(proposalBudgetCopyKey(proposalId))
+  }
+
+  function handleCopySection(proposalId: string, sectionTitle: string, period: number, sectionRows: WorkspaceRow[]) {
+    const label = `${sectionTitle} (Period ${period})`
+    undoCopyRef.current = onCopySection(label, sectionRows)
+    setCopiedKey(proposalSectionCopyKey(proposalId, sectionTitle, period))
+  }
+
+  function handleUndoCopy(e: React.MouseEvent) {
+    e.stopPropagation()
+    undoCopyRef.current?.()
+    undoCopyRef.current = null
+    setCopiedKey(null)
+  }
+
+  function handleClose() {
+    setCopiedKey(null)
+    undoCopyRef.current = null
+    onClose()
+  }
 
   const uniq = (vals: (string | number)[]) => [...new Set(vals.map(String))]
   const names    = uniq(PAST_PROPOSALS.map(p => p.name))
@@ -1103,8 +1242,8 @@ function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
   return (
     <>
       <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Proposal History">
-        <button onClick={onClose} aria-label="Close modal" className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]" />
-        <div className="relative bg-card rounded-xl shadow-2xl w-[920px] max-w-full max-h-[88vh] flex flex-col">
+        <button onClick={handleClose} aria-label="Close modal" className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]" />
+        <div className="relative bg-card rounded-xl shadow-2xl w-[920px] max-w-[calc(100vw-2rem)] max-h-[88vh] flex flex-col overflow-hidden">
           <header className="px-5 py-4 border-b border-bdLt flex items-start">
             <div className="flex-1">
               <div className="flex items-baseline gap-2">
@@ -1113,31 +1252,33 @@ function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
               </div>
               <p className="text-[12px] text-mute mt-0.5">Click a proposal to open its budget, then copy it into your current worksheet.</p>
             </div>
-            <button onClick={onClose} className="w-8 h-8 rounded-md flex items-center justify-center text-mute hover:bg-surf2" aria-label="Close">✕</button>
+            <button onClick={handleClose} className="w-8 h-8 rounded-md flex items-center justify-center text-mute hover:bg-surf2" aria-label="Close">✕</button>
           </header>
 
-          {/* Filters + sort */}
-          <div className="px-5 py-3 border-b border-bdLt bg-page flex items-center gap-2.5">
-            <span className="text-[10px] uppercase tracking-widest font-semibold text-sub shrink-0">Filter</span>
+          {/* Filters + sort — single row */}
+          <div className="px-5 py-3 border-b border-bdLt bg-page flex items-center gap-2 flex-nowrap min-w-0">
+            <span className="text-[10px] uppercase tracking-widest font-semibold text-sub shrink-0 whitespace-nowrap">Filter</span>
             <ProposalFilter label="Budget Name" value={fName}    onChange={setFName}    options={names} />
             <ProposalFilter label="Sponsor"     value={fSponsor} onChange={setFSponsor} options={sponsors} />
             <ProposalFilter label="Year"        value={fYear}    onChange={setFYear}    options={years} />
             <ProposalFilter label="PI"          value={fPi}      onChange={setFPi}      options={pis} />
             {hasFilter && (
               <button onClick={() => { setFName(''); setFSponsor(''); setFYear(''); setFPi('') }}
-                className="text-[11px] text-purple-700 underline shrink-0">Clear</button>
+                className="text-[11px] text-purple-700 underline shrink-0 whitespace-nowrap">Clear</button>
             )}
-            <div className="flex-1" />
-            <span className="text-[10px] uppercase tracking-widest font-semibold text-sub shrink-0">Sort by</span>
-            <select
-              value={sortBy}
-              onChange={e => setSortBy(e.target.value as ProposalSort)}
-              aria-label="Sort proposals by"
-              className="px-2 py-1 border border-bd rounded text-[12px] bg-white focus:outline-none focus:border-sage-500 shrink-0">
-              <option value="recent">Recent date</option>
-              <option value="budget">Budget amount</option>
-              <option value="pi">PI name (A–Z)</option>
-            </select>
+            <div className="flex-1 min-w-2 shrink" aria-hidden="true" />
+            <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
+              <span className="text-[10px] uppercase tracking-widest font-semibold text-sub">Sort by</span>
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as ProposalSort)}
+                aria-label="Sort proposals by"
+                className="w-[7.25rem] shrink-0 px-2 py-1 border border-bd rounded text-[12px] bg-white focus:outline-none focus:border-sage-500">
+                <option value="recent">Recent date</option>
+                <option value="budget">Budget amount</option>
+                <option value="pi">PI name (A–Z)</option>
+              </select>
+            </div>
           </div>
 
           {/* Table */}
@@ -1165,10 +1306,13 @@ function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
                     <td className="px-4 py-2.5 tabular-nums">{p.year}, Period {p.period}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums font-semibold">${totalsOf(p.rows).total.toLocaleString()}</td>
                     <td className="px-4 py-2.5 text-right">
-                      <button onClick={e => { e.stopPropagation(); onCopy(p.rows) }}
-                        className="px-3 py-1.5 rounded-md bg-purple-700 text-white text-[11px] font-semibold hover:opacity-90 transition">
-                        Copy budget
-                      </button>
+                      <ProposalCopyButtons
+                        copied={copiedKey === proposalBudgetCopyKey(p.id)}
+                        copyLabel="Copy budget"
+                        onCopy={() => handleCopyBudget(p.id, p.rows)}
+                        onUndo={handleUndoCopy}
+                        stopPropagation
+                      />
                     </td>
                   </tr>
                 ))}
@@ -1181,20 +1325,25 @@ function ProposalHistoryModal({ open, onClose, onCopy, onCopySection }: {
       {detail && (
         <ProposalDetailModal
           proposal={detail}
-          onCopy={onCopy}
-          onCopySection={onCopySection}
+          copiedKey={copiedKey}
+          onCopyBudget={(rows) => handleCopyBudget(detail.id, rows)}
+          onCopySection={(sectionTitle, period, sectionRows) =>
+            handleCopySection(detail.id, sectionTitle, period, sectionRows)}
           onClose={() => setDetail(null)}
+          onUndoCopy={handleUndoCopy}
         />
       )}
     </>
   )
 }
 
-function ProposalDetailModal({ proposal, onCopy, onCopySection, onClose }: {
+function ProposalDetailModal({ proposal, copiedKey, onCopyBudget, onCopySection, onClose, onUndoCopy }: {
   proposal: PastProposal;
-  onCopy: (rows: WorkspaceRow[]) => void;
-  onCopySection: (sectionTitle: string, rows: WorkspaceRow[]) => void;
+  copiedKey: string | null;
+  onCopyBudget: (rows: WorkspaceRow[]) => void;
+  onCopySection: (sectionTitle: string, period: number, rows: WorkspaceRow[]) => void;
   onClose: () => void;
+  onUndoCopy: (e: React.MouseEvent) => void;
 }) {
   const [period, setPeriod] = useState<1 | 2 | 3>(1)
   // Period 1 is the proposal's baseline; periods 2 and 3 escalate by 3% per year.
@@ -1281,10 +1430,12 @@ function ProposalDetailModal({ proposal, onCopy, onCopySection, onClose }: {
                       <td colSpan={7} className="px-3 py-1.5">
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-[10px] uppercase tracking-widest font-semibold text-sub">{section.title}</span>
-                          <button onClick={() => onCopySection(`${section.title} (Period ${period})`, secRows)}
-                            className="px-2.5 py-1 rounded-md border border-purple-700/40 text-purple-700 text-[10px] font-semibold hover:bg-purple-100/60 transition shrink-0">
-                            Copy section
-                          </button>
+                          <ProposalCopyButtons
+                            copied={copiedKey === proposalSectionCopyKey(proposal.id, section.title, period)}
+                            copyLabel="Copy section"
+                            onCopy={() => onCopySection(section.title, period, secRows)}
+                            onUndo={onUndoCopy}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -1311,10 +1462,13 @@ function ProposalDetailModal({ proposal, onCopy, onCopySection, onClose }: {
           <span className="text-[16px] font-semibold tabular-nums">${total.toLocaleString()}</span>
           <div className="flex-1" />
           <button onClick={onClose} className="px-4 py-2 border border-bd rounded-lg text-[13px] font-medium hover:bg-surf2 transition">Close</button>
-          <button onClick={() => onCopy(displayedRows)}
-            className="px-4 py-2 rounded-lg bg-purple-700 text-white text-[13px] font-semibold hover:opacity-90 transition">
-            Copy budget to worksheet
-          </button>
+          <ProposalCopyButtons
+            copied={copiedKey === proposalBudgetCopyKey(proposal.id)}
+            copyLabel="Copy budget to worksheet"
+            onCopy={() => onCopyBudget(displayedRows)}
+            onUndo={onUndoCopy}
+            size="md"
+          />
         </footer>
       </div>
     </div>
@@ -1403,7 +1557,7 @@ function AISuggestInput({ value, onChange, onClick, placeholder, suggestions, ai
         onBlur={() => setTimeout(() => setFocused(false), 150)}
         placeholder={placeholder}
         data-tutorial-target={tutorialTarget}
-        className="w-full bg-transparent text-[12px] outline-none focus:bg-white focus:px-1 focus:rounded focus:ring-1 focus:ring-sage-500"
+        className="w-full bg-transparent text-[12px] outline-none placeholder:text-sub"
       />
       {showDropdown && (
         <div className="absolute top-full left-0 z-50 mt-0.5 bg-white border border-bdLt rounded-lg shadow-xl overflow-hidden min-w-[220px]">
@@ -1448,7 +1602,7 @@ function NumSuggestInput({ value, onChange, prefix, suffix, placeholder, suggest
         onFocus={() => setFocused(true)}
         onBlur={() => setTimeout(() => setFocused(false), 150)}
         placeholder={placeholder}
-        className="w-full bg-transparent text-[12px] tabular-nums text-right outline-none focus:bg-white focus:px-1 focus:rounded focus:ring-1 focus:ring-sage-500 placeholder:text-sub placeholder:italic placeholder:text-[10px]"
+        className="w-full bg-transparent text-[12px] tabular-nums text-right outline-none placeholder:text-sub placeholder:italic placeholder:text-[10px]"
       />
       {suffix && display && <span className="text-sub text-[11px] ml-0.5">{suffix}</span>}
       {showDropdown && (
@@ -1481,7 +1635,7 @@ function NumInput({ value, onChange, prefix, suffix, placeholder }: {
         onChange={e => onChange(Number(e.target.value.replace(/[^0-9.]/g, '')) || 0)}
         onClick={e => e.stopPropagation()}
         placeholder={placeholder}
-        className="w-full bg-transparent text-[12px] tabular-nums text-right outline-none focus:bg-white focus:px-1 focus:rounded focus:ring-1 focus:ring-sage-500 placeholder:text-sub placeholder:italic placeholder:text-[10px]"
+        className="w-full bg-transparent text-[12px] tabular-nums text-right outline-none placeholder:text-sub placeholder:italic placeholder:text-[10px]"
       />
       {suffix && display && <span className="text-sub text-[11px] ml-0.5">{suffix}</span>}
     </div>
@@ -2424,6 +2578,92 @@ function SendReviewIcon(){ return <Svg><line x1="22" y1="2" x2="11" y2="13" /><p
 // SCREEN — eGC1 Forms (auto-populated from Worksheet)
 // =====================================================================
 
+// eGC1 routing pipeline — shared by banner + submission summary
+type RoutingStepState = 'done' | 'active' | 'next' | 'pending'
+
+const EGC1_ROUTING_STEPS: { label: string; state: RoutingStepState; detail?: string }[] = [
+  { label: 'Submitted', state: 'done' },
+  { label: 'Department', state: 'done' },
+  { label: 'Dept Chair', state: 'active', detail: 'In review' },
+  { label: 'Central Admin', state: 'next', detail: 'Up next' },
+  { label: 'OSP', state: 'pending' },
+  { label: 'NoA', state: 'pending' },
+]
+
+function RoutingStepChip({ label, state, detail, compact }: {
+  label: string; state: RoutingStepState; detail?: string; compact?: boolean;
+}) {
+  const s = {
+    done: {
+      wrap: 'bg-sage-50 border-sage-200 text-sage-800',
+      icon: 'bg-sage-600 text-white',
+      glyph: '✓',
+    },
+    active: {
+      wrap: 'bg-amber-50 border-amber-400 text-amber-900 shadow-sm ring-2 ring-amber-200/70',
+      icon: 'bg-amber-500 text-white',
+      glyph: '●',
+    },
+    next: {
+      wrap: 'bg-white border-sage-400 text-sage-800 border-dashed',
+      icon: 'bg-sage-100 text-sage-700 border border-sage-300',
+      glyph: '→',
+    },
+    pending: {
+      wrap: 'bg-surf2/80 border-bdLt text-sub',
+      icon: 'bg-bd/60 text-sub',
+      glyph: '○',
+    },
+  }[state]
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 border rounded-md shrink-0 max-w-full ${
+        compact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-[11px]'
+      } ${s.wrap}`}
+      title={detail ? `${label}: ${detail}` : label}>
+      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${s.icon}`}>
+        {s.glyph}
+      </span>
+      <span className="font-semibold truncate">{label}</span>
+      {detail && (
+        <span className={`font-medium uppercase tracking-wide shrink-0 ${
+          state === 'active' ? 'text-amber-800' : state === 'next' ? 'text-sage-700' : 'text-sub'
+        } ${compact ? 'text-[8px]' : 'text-[9px]'}`}>
+          {detail}
+        </span>
+      )}
+    </span>
+  )
+}
+
+function Egc1RoutingWorkflow({ compact, showLegend }: { compact?: boolean; showLegend?: boolean }) {
+  return (
+    <div className="min-w-0 w-full">
+      <ol className="flex flex-wrap items-center gap-x-1 gap-y-1.5 list-none p-0 m-0" aria-label="eGC1 routing status">
+        {EGC1_ROUTING_STEPS.map((step, i) => (
+          <li key={step.label} className="flex items-center gap-1 min-w-0 max-w-full">
+            {i > 0 && (
+              <span className={`text-sub shrink-0 select-none ${compact ? 'text-[9px]' : 'text-[10px]'}`} aria-hidden>
+                →
+              </span>
+            )}
+            <RoutingStepChip {...step} compact={compact} />
+          </li>
+        ))}
+      </ol>
+      {showLegend && (
+        <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-sub">
+          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-sage-600" aria-hidden /> Complete</span>
+          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" aria-hidden /> In review</span>
+          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded border border-dashed border-sage-400" aria-hidden /> Up next</span>
+          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-bd" aria-hidden /> Pending</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Routing-step card used by the eGC1 submission view
 type StepStatus = 'done' | 'active' | 'waiting'
 function StepCard({ n, status, statusLabel, title, desc }: {
@@ -2480,22 +2720,12 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
           { label: 'Submitted' },
         ]} />
 
-        <div className="px-6 py-2.5 border-b border-sage-100 bg-sage-50 text-sage-700 text-[12px] flex items-center gap-3 flex-wrap">
+        <div className="px-6 py-2.5 border-b border-sage-100 bg-sage-50 text-sage-700 text-[12px] flex items-center gap-3 flex-wrap min-w-0">
           <span className="w-5 h-5 rounded-full bg-sage-600 text-white flex items-center justify-center text-[11px] font-bold shrink-0">✓</span>
-          <span className="font-medium flex items-center gap-1.5 flex-wrap">
-            <span className="text-sage-700">Submitted</span>
-            <span className="text-sage-400">→</span>
-            <span className="text-sage-700">Department</span>
-            <span className="text-sage-400">→</span>
-            <span className="text-amber-700 font-semibold">Dept Chair</span>
-            <span className="text-sage-400">→</span>
-            <span className="text-sub font-normal">Central Admin</span>
-            <span className="text-sage-400">→</span>
-            <span className="text-sub font-normal">OSP</span>
-            <span className="text-sage-400">→</span>
-            <span className="text-sub font-normal">Awaiting NoA</span>
-          </span>
-          <div className="flex-1" />
+          <span className="font-medium shrink-0 whitespace-nowrap">Routing</span>
+          <div className="flex-1 min-w-0">
+            <Egc1RoutingWorkflow compact />
+          </div>
           <button onClick={() => go('workspace')} className="text-[11px] underline shrink-0">Edit Worksheet copy ↗</button>
         </div>
 
@@ -2514,7 +2744,7 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
                 <StepCard n={1} status="done"    statusLabel="Reviewed" title="Submitted"     desc="eGC1 submitted from Worksheet for routing." />
                 <StepCard n={2} status="done"    statusLabel="Reviewed" title="Department"    desc="Departmental staff verified the budget and routed it forward." />
                 <StepCard n={3} status="active"  statusLabel="In Review" title="Dept Chair"   desc="The Department Chair is currently reviewing this submission." />
-                <StepCard n={4} status="waiting" statusLabel="Pending"  title="Central Admin" desc="Awaits sign-off from the school/college central administrator." />
+                <StepCard n={4} status="waiting" statusLabel="Up next"  title="Central Admin" desc="Next in line — awaits sign-off from the school/college central administrator." />
                 <StepCard n={5} status="waiting" statusLabel="Pending"  title="OSP Review"    desc="Office of Sponsored Programs will review before sponsor submission." />
                 <StepCard n={6} status="waiting" statusLabel="Next"     title="Awaiting NoA"  desc="Upload the Notice of Award once sponsor approval arrives." />
               </div>
@@ -2527,11 +2757,14 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
 
             <div className="mt-5 bg-white border border-bdLt rounded-xl p-5 text-[13px]">
               <div className="font-semibold text-ink mb-3">Submission summary</div>
-              <div className="grid grid-cols-2 gap-y-2 gap-x-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-6">
+                <div className="sm:col-span-2 pb-3 mb-1 border-b border-bdLt/70">
+                  <div className="text-[13px] text-mute mb-2">Status</div>
+                  <Egc1RoutingWorkflow showLegend />
+                </div>
                 <Row k="eGC1" v="A224134 · Test 1" />
                 <Row k="SAGE Budget" v="B158116" />
                 <Row k="PI" v="Harry Potter" />
-                <Row k="Status" v="Department ✓ → Dept Chair (In Review) → Central Admin → OSP → NoA" highlight />
                 <Row k="Direct costs" v={`$${codeTotal.toLocaleString()}`} />
                 <Row k="Project total" v={`$${totals.total.toLocaleString()}`} highlight />
               </div>
@@ -2723,6 +2956,9 @@ function NoaSubStage({ toast, noaUploaded, setNoaUploaded, setAwardsStep, rows }
   const [uploadedFile, setUploadedFile] = useState<{ name: string; size: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const workspaceSum = totalsOf(rows).total
+  const NOA_Y1 = 267006
+  const diff = Math.abs(NOA_Y1 - workspaceSum)
+  const matched = diff === 0
 
   function handleFile(file: File) {
     if (phase !== 'empty') return
@@ -2843,10 +3079,14 @@ function NoaSubStage({ toast, noaUploaded, setNoaUploaded, setAwardsStep, rows }
               <div className="text-[10px] text-amber-700 uppercase tracking-widest font-semibold mb-2">Quick diff vs Worksheet</div>
               <div className="space-y-1.5 text-[12px]">
                 <div className="flex justify-between"><span className="text-mute">Worksheet sum</span><span className="font-semibold tabular-nums">${workspaceSum.toLocaleString()}</span></div>
-                <div className="flex justify-between"><span className="text-mute">NoA Y1 awarded</span><span className="font-semibold text-sage-700 tabular-nums">$267,006</span></div>
+                <div className="flex justify-between"><span className="text-mute">NoA Y1 awarded</span><span className="font-semibold text-sage-700 tabular-nums">${NOA_Y1.toLocaleString()}</span></div>
                 <div className="flex justify-between pt-1.5 border-t border-amber-bd">
-                  <span className="text-amber-700 font-semibold">{workspaceSum > 267006 ? 'Over by' : 'Surplus'}</span>
-                  <span className="font-semibold tabular-nums">${Math.abs(267006 - workspaceSum).toLocaleString()}</span>
+                  <span className={`font-semibold ${matched ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    {matched ? 'Difference' : workspaceSum > NOA_Y1 ? 'Over by' : 'Surplus'}
+                  </span>
+                  <span className={`font-semibold tabular-nums ${matched ? 'text-emerald-700' : 'text-red'}`}>
+                    ${diff.toLocaleString()}
+                  </span>
                 </div>
               </div>
             </div>
@@ -2994,7 +3234,11 @@ function ReconcileSubStage({ go, toast, rows, setRows, setIssues, reconciliation
             <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-3">Amount</div>
             <Row k="Proposed total" v={`$${workspaceSum.toLocaleString()}`} />
             <Row k="Awarded total (NoA)" v={`$${NOA_TOTAL.toLocaleString()}`} highlight />
-            <Row k={delta > 0 ? 'Surplus' : 'Over budget'} v={`${delta > 0 ? '+' : '−'} $${Math.abs(delta).toLocaleString()}`} tone={delta > 0 ? 'amber' : 'red'} />
+            <Row
+              k={delta === 0 ? 'Difference' : delta > 0 ? 'Surplus' : 'Over budget'}
+              v={delta === 0 ? '$0' : `${delta > 0 ? '+' : '−'} $${Math.abs(delta).toLocaleString()}`}
+              tone={delta === 0 ? 'green' : 'red'}
+            />
           </div>
           <div className="bg-white border border-bdLt rounded-lg p-5">
             <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-3">Dates</div>
@@ -3352,8 +3596,8 @@ function SectionFooter({ onClose, onPrev, onNext }: { onClose: () => void; onPre
   )
 }
 
-function Row({ k, v, tone, highlight, small }: { k: string; v: string; tone?: 'red'|'amber'; highlight?: boolean; small?: boolean }) {
-  const color = tone === 'red' ? 'text-red' : tone === 'amber' ? 'text-amber-700' : highlight ? 'text-sage-700' : 'text-ink'
+function Row({ k, v, tone, highlight, small }: { k: string; v: string; tone?: 'red'|'amber'|'green'; highlight?: boolean; small?: boolean }) {
+  const color = tone === 'red' ? 'text-red' : tone === 'amber' ? 'text-amber-700' : tone === 'green' ? 'text-emerald-700' : highlight ? 'text-sage-700' : 'text-ink'
   return (
     <div className="flex items-center justify-between py-2 text-[13px]">
       <span className="text-mute">{k}</span>
