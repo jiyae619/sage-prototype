@@ -2,7 +2,7 @@ import { useState, useRef, Fragment } from 'react'
 import {
   Button, Pill, ConfidenceChip, SourceTag,
   AIDisclaimer, Header, Footer,
-  StickyCta, FloatingActionBar, FloatingBtn, Modal,
+  StickyCta, FloatingActionBar, FloatingBtn, FloatingTip, Modal,
   MismatchPanel, ImportBlockerBanner,
   SubTabs, HoverTip,
   type Issue, type TabKey, type AwardsStep,
@@ -361,6 +361,15 @@ export function WorkspaceScreen(props: Nav & {
   const [titleEditing, setTitleEditing] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   const TITLE_SUGGESTION = 'Eye Conditions Evaluation'
+  const [newTitle, setNewTitle] = useState('New Budget Worksheet')
+  const [newTitleEditing, setNewTitleEditing] = useState(false)
+  const [newTitleDraft, setNewTitleDraft] = useState('')
+  const [activePeriod, setActivePeriod] = useState<1 | 2>(1)
+  const saveNewTitle = () => {
+    const v = newTitleDraft.trim()
+    if (v) setNewTitle(v)
+    setNewTitleEditing(false)
+  }
   const [pdfOpen, setPdfOpen] = useState(false)
   const [addinOpen, setAddinOpen] = useState(captureUi?.addinOpen ?? false)
   const [mismatchView, setMismatchView] = useState(captureUi?.mismatchView ?? false)
@@ -414,7 +423,7 @@ export function WorkspaceScreen(props: Nav & {
   }
 
   function updateRow(id: string, patch: Partial<WorkspaceRow>) {
-    setRows(rows.map(r => r.id === id ? { ...r, ...patch } : r))
+    setRows(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
   }
 
   function sendForPiReview() {
@@ -466,7 +475,6 @@ export function WorkspaceScreen(props: Nav & {
       ...r,
       label: 'OCT Imaging Module',
       role: 'Heidelberg SPECTRALIS',
-      amount: 5000,
       autoPopulated: true,
     } : r))
     setSelectedRow('eq')
@@ -479,10 +487,9 @@ export function WorkspaceScreen(props: Nav & {
     const r = rows.find(x => x.id === rowId)
     if (!r) return
     // Only the saved row is affected — other rows are left untouched (no auto-populate).
-    const next = rows.map(x =>
+    setRows(prev => prev.map(x =>
       x.id === rowId ? { ...x, autoPopulated: false, verified: true } : x
-    )
-    setRows(next)
+    ))
     if (r.id === 'eq') {
       toast(`✓ ${r.label} approved.`)
     }
@@ -544,10 +551,58 @@ export function WorkspaceScreen(props: Nav & {
                 <span className="opacity-0 group-hover:opacity-60 text-[11px] text-sage-700">✎</span>
               </button>
             )
-          ) : 'New Budget Worksheet · A224134'
+          ) : (
+            <span className="inline-flex items-center gap-1.5">
+              {newTitleEditing ? (
+                <input
+                  value={newTitleDraft}
+                  autoFocus
+                  onChange={e => setNewTitleDraft(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') saveNewTitle()
+                    if (e.key === 'Escape') setNewTitleEditing(false)
+                  }}
+                  className="text-[16px] font-semibold px-2 py-0.5 border border-sage-500 rounded outline-none focus:ring-2 focus:ring-sage-500/30 min-w-[260px]"
+                />
+              ) : (
+                <h1 className="text-[16px] font-semibold">{newTitle} · A224134</h1>
+              )}
+              <button
+                onClick={() => {
+                  if (newTitleEditing) {
+                    saveNewTitle()
+                  } else {
+                    setNewTitleDraft(newTitle)
+                    setNewTitleEditing(true)
+                  }
+                }}
+                title={newTitleEditing ? 'Save' : 'Edit name'}
+                aria-label={newTitleEditing ? 'Save name' : 'Edit name'}
+                className="inline-flex items-center justify-center w-6 h-6 rounded text-sage-700 hover:bg-sage-50 transition"
+              >
+                {newTitleEditing ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                    <polyline points="17 21 17 13 7 13 7 21" />
+                    <polyline points="7 3 7 8 15 8" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                  </svg>
+                )}
+              </button>
+            </span>
+          )
         }
         idChip={reconciliationActive ? 'Post-award · resolving mismatch' : 'Pre-award draft'}
-        status={hasTarget ? `· target $${target.toLocaleString()}` : '· no target set'}
+        status={hasTarget ? `· target $${target.toLocaleString()}` : undefined}
+        trailingChip={
+          <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sage-50 text-[10px] text-sage-700 font-medium whitespace-nowrap">
+            <span className="w-1.5 h-1.5 rounded-full bg-sage-500" /> Autosaved 12s ago
+          </span>
+        }
         totals={[
           { label: 'Direct Costs',  value: totals.directCosts > 0 ? `$${totals.directCosts.toLocaleString()}` : '—' },
           { label: 'F&A',           value: totals.fa > 0 ? `$${totals.fa.toLocaleString()}` : '—' },
@@ -556,61 +611,49 @@ export function WorkspaceScreen(props: Nav & {
         totalsBalance={totalsBalance}
       />
 
-      {/* Reconciliation bar (target awareness) */}
-      <div className="bg-white border-b border-bdLt px-7 py-2.5 flex items-center gap-6 text-[12px]">
-        {reconciliationActive && (
-          <span className="text-sub uppercase tracking-widest font-semibold whitespace-nowrap">
-            Resolve Mismatch
-          </span>
-        )}
-        {hasTarget ? <>
-          <div className="flex items-center gap-2 whitespace-nowrap">
-            <span className="text-mute">Target</span>
-            <span className="font-semibold text-sage-700">${target.toLocaleString()}</span>
-          </div>
-          <span className="text-sub">−</span>
-          <div className="flex items-center gap-2 whitespace-nowrap">
-            <span className="text-mute">Sum</span>
-            <span className={`font-semibold ${delta === 0 ? 'text-sage-700' : 'text-red'}`}>${totals.total.toLocaleString()}</span>
-          </div>
-          <span className="text-sub">=</span>
-          <div className="flex items-center gap-2 whitespace-nowrap">
-            <span className="text-mute">Delta</span>
-            <span className={`font-semibold ${delta === 0 ? 'text-sage-700' : 'text-red'}`}>
-              {delta === 0 ? 'Balanced ✓' : delta > 0 ? `$${delta.toLocaleString()} ${reconciliationActive ? 'short' : 'remaining'}` : `$${Math.abs(delta).toLocaleString()} over`}
+      {/* Reconciliation bar (target awareness) — only shown when there's content */}
+      {(reconciliationActive || hasTarget) && (
+        <div className="bg-white border-b border-bdLt px-7 py-2.5 flex items-center gap-6 text-[12px]">
+          {reconciliationActive && (
+            <span className="text-sub uppercase tracking-widest font-semibold whitespace-nowrap">
+              Resolve Mismatch
             </span>
-          </div>
-        </> : (
-          <button onClick={() => setHistoryOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-700 text-white text-[12px] font-semibold shadow-sm hover:bg-purple-800 transition">
-            <span aria-hidden>✦</span> Check Proposal History
-          </button>
-        )}
-        {reconciliationActive && issues.length > 0 && (
-          <button
-            onClick={() => { setMismatchResolveClicked(true); openMismatch(0) }}
-            className={`ml-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-red text-white text-[12px] font-bold shadow-[0_0_0_0_rgba(185,28,28,0.55)] hover:bg-red transition${mismatchResolveClicked ? '' : ' animate-mismatch-pulse'}`}>
-            <span aria-hidden>⚠</span>
-            {issues.length} mismatch{issues.length > 1 ? 'es' : ''} · Resolve →
-          </button>
-        )}
-        <div className="flex-1" />
-        <span className="text-[10px] text-mute whitespace-nowrap">EyeConditions_Period1.xlsx</span>
-        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sage-50 text-[10px] text-sage-700 font-medium whitespace-nowrap">
-          <span className="w-1.5 h-1.5 rounded-full bg-sage-500" /> Autosaved 12s ago
-        </span>
-      </div>
+          )}
+          {hasTarget && <>
+            <div className="flex items-center gap-2 whitespace-nowrap">
+              <span className="text-mute">Target</span>
+              <span className="font-semibold text-sage-700">${target.toLocaleString()}</span>
+            </div>
+            <span className="text-sub">−</span>
+            <div className="flex items-center gap-2 whitespace-nowrap">
+              <span className="text-mute">Sum</span>
+              <span className={`font-semibold ${delta === 0 ? 'text-sage-700' : 'text-red'}`}>${totals.total.toLocaleString()}</span>
+            </div>
+            <span className="text-sub">=</span>
+            <div className="flex items-center gap-2 whitespace-nowrap">
+              <span className="text-mute">Delta</span>
+              <span className={`font-semibold ${delta === 0 ? 'text-sage-700' : 'text-red'}`}>
+                {delta === 0 ? 'Balanced ✓' : delta > 0 ? `$${delta.toLocaleString()} ${reconciliationActive ? 'short' : 'remaining'}` : `$${Math.abs(delta).toLocaleString()} over`}
+              </span>
+            </div>
+          </>}
+          {reconciliationActive && issues.length > 0 && (
+            <button
+              onClick={() => { setMismatchResolveClicked(true); openMismatch(0) }}
+              className={`ml-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-red text-white text-[12px] font-bold shadow-[0_0_0_0_rgba(185,28,28,0.55)] hover:bg-red transition${mismatchResolveClicked ? '' : ' animate-mismatch-pulse'}`}>
+              <span aria-hidden>⚠</span>
+              {issues.length} mismatch{issues.length > 1 ? 'es' : ''} · Resolve →
+            </button>
+          )}
+          <div className="flex-1" />
+          <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sage-50 text-[10px] text-sage-700 font-medium whitespace-nowrap">
+            <span className="w-1.5 h-1.5 rounded-full bg-sage-500" /> Autosaved 12s ago
+          </span>
+        </div>
+      )}
 
       {/* Workspace body */}
       <div className="flex-1 flex overflow-hidden relative">
-        {pdfOpen && (
-          <PdfPreviewPanel
-            amount={rows.find(r => r.id === 'eq')?.amount || 5000}
-            onAmountChange={amount => updateRow('eq', { amount })}
-            onClose={() => setPdfOpen(false)}
-          />
-        )}
-
         {/* Excel-like surface */}
         <div className="flex-1 flex flex-col overflow-hidden bg-white" data-tutorial-target="workspace">
           {/* Setup row */}
@@ -646,7 +689,7 @@ export function WorkspaceScreen(props: Nav & {
             <div className="h-5 w-px bg-bdLt" />
             <div className="flex items-center gap-2">
               <span className="text-sub uppercase text-[10px] font-semibold tracking-widest">Start</span>
-              <span className="text-ink font-medium">3/1/2024</span>
+              <span className="text-ink font-medium">{new Date().toLocaleDateString('en-US')}</span>
             </div>
             <div className="flex-1" />
           </div>
@@ -727,6 +770,7 @@ export function WorkspaceScreen(props: Nav & {
                                 suggestions={AI_LABEL_SUGGESTIONS[r.category] || []}
                                 aiOn={aiOn}
                                 tutorialTarget={r.id === 'per1' ? 'name-input' : undefined}
+                                hideHeader={r.category === 'personnel'}
                               />
                             </div>
                           ) : (
@@ -887,36 +931,25 @@ export function WorkspaceScreen(props: Nav & {
               )
             })}
 
-            {/* Empty-state hint */}
-            {!isFilled && (
-              <div className="p-8 text-center text-[12px] text-mute border-t border-dashed border-bd">
-                <p>Worksheet starts blank. Type into any cell to begin, or use <button onClick={aiPrefill} className="text-purple-700 underline">AI prefill</button> from similar past proposals.</p>
-              </div>
-            )}
           </div>
 
           {/* Period tabs */}
           <div className="bg-[#F0EFE0] border-t border-bdLt h-8 flex items-center text-[11px]">
-            {['Period 1','Period 2','All Periods Summary'].map((l, i) => (
-              <div key={l} className={`px-4 py-1.5 border-r border-bdLt ${i===0 ? 'bg-white text-sage-700 font-semibold' : 'text-mute'}`}>{l}</div>
-            ))}
+            {([1, 2] as const).map(p => {
+              const isActive = activePeriod === p
+              return (
+                <button
+                  key={p}
+                  onClick={() => setActivePeriod(p)}
+                  className={`px-4 py-1.5 border-r border-bdLt transition ${
+                    isActive ? 'bg-white text-sage-700 font-semibold' : 'text-mute hover:bg-white/60 hover:text-ink'
+                  }`}>
+                  Period {p}
+                </button>
+              )
+            })}
+            <div className="px-4 py-1.5 border-r border-bdLt text-mute">All Periods Summary</div>
             <div className="flex-1" />
-            <div className="px-3 text-[11px] tabular-nums">
-              {hasTarget ? (
-                <>
-                  <span className={delta === 0 ? 'text-emerald-700 font-semibold' : 'text-red font-semibold'}>
-                    Sum: ${totals.total.toLocaleString()}
-                  </span>
-                  <span className="text-sub">
-                    {' '}· DC: ${totals.directCosts.toLocaleString()} · MTDC: ${totals.mtdcBase.toLocaleString()}
-                  </span>
-                </>
-              ) : (
-                <span className="text-sub">
-                  Sum: ${totals.total.toLocaleString()} · DC: ${totals.directCosts.toLocaleString()} · MTDC: ${totals.mtdcBase.toLocaleString()}
-                </span>
-              )}
-            </div>
           </div>
         </div>
 
@@ -1000,6 +1033,19 @@ export function WorkspaceScreen(props: Nav & {
 
         {/* Floating action bar */}
         <FloatingActionBar>
+          {!hasTarget && (
+            <>
+              <FloatingTip label="Copy from the previously built budgets">
+                <button onClick={() => setHistoryOpen(true)}
+                  aria-label="Prefill Budget — Copy from the previously built budgets"
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3.5 h-9 rounded-full border border-bd bg-white text-ink text-[12px] font-medium hover:bg-surf2 transition leading-none focus:outline-none focus-visible:ring-2 focus-visible:ring-sage-500">
+                  <span aria-hidden>✦</span>
+                  Prefill Budget
+                </button>
+              </FloatingTip>
+              <span className="w-px h-6 bg-bd mx-1 shrink-0" aria-hidden />
+            </>
+          )}
           <FloatingBtn tooltip="Upload supporting documents" onClick={() => setUploadOpen(true)} icon={<UploadIcon />} label="Attachments" tutorialTarget="upload-button" />
           <span className="w-px h-6 bg-bd mx-1 shrink-0" aria-hidden />
           <FloatingBtn tooltip="Send to PI for review" onClick={sendForPiReview} icon={<SendReviewIcon />} label="PI Review" tutorialTarget="pi-review-button" />
@@ -1077,9 +1123,7 @@ export function WorkspaceScreen(props: Nav & {
               </span>
               <span>{`  ·  Target: $${target.toLocaleString()}`}</span>
             </span>
-          ) : (
-            `Sum: $${totals.total.toLocaleString()}`
-          )
+          ) : undefined
         }
       />
     </div>
@@ -1464,7 +1508,7 @@ function ProposalDetailModal({ proposal, copiedKey, onCopyBudget, onCopySection,
           <button onClick={onClose} className="px-4 py-2 border border-bd rounded-lg text-[13px] font-medium hover:bg-surf2 transition">Close</button>
           <ProposalCopyButtons
             copied={copiedKey === proposalBudgetCopyKey(proposal.id)}
-            copyLabel="Copy budget to worksheet"
+            copyLabel="Copy the Entire Budget"
             onCopy={() => onCopyBudget(displayedRows)}
             onUndo={onUndoCopy}
             size="md"
@@ -1532,7 +1576,7 @@ const AI_MONTHS_SUGGESTIONS: Record<string, number[]> = {
 // AI SUGGEST INPUT — text field with inline AI suggestion dropdown
 // =====================================================================
 
-function AISuggestInput({ value, onChange, onClick, placeholder, suggestions, aiOn, tutorialTarget }: {
+function AISuggestInput({ value, onChange, onClick, placeholder, suggestions, aiOn, tutorialTarget, hideHeader }: {
   value: string;
   onChange: (v: string) => void;
   onClick?: (e: React.MouseEvent) => void;
@@ -1540,6 +1584,7 @@ function AISuggestInput({ value, onChange, onClick, placeholder, suggestions, ai
   suggestions: string[];
   aiOn: boolean;
   tutorialTarget?: string;
+  hideHeader?: boolean;
 }) {
   const [focused, setFocused] = useState(false)
   const filtered = suggestions
@@ -1561,9 +1606,11 @@ function AISuggestInput({ value, onChange, onClick, placeholder, suggestions, ai
       />
       {showDropdown && (
         <div className="absolute top-full left-0 z-50 mt-0.5 bg-white border border-bdLt rounded-lg shadow-xl overflow-hidden min-w-[220px]">
-          <div className="px-2.5 py-1 text-[9px] text-purple-700 uppercase tracking-widest font-semibold bg-purple-100/60 border-b border-bdLt flex items-center gap-1">
-            <span aria-hidden>✦</span> AI suggestions
-          </div>
+          {!hideHeader && (
+            <div className="px-2.5 py-1 text-[9px] text-purple-700 uppercase tracking-widest font-semibold bg-purple-100/60 border-b border-bdLt flex items-center gap-1">
+              <span aria-hidden>✦</span> AI suggestions
+            </div>
+          )}
           {filtered.map((s, i) => (
             <button key={i} onMouseDown={() => { onChange(s); setFocused(false) }}
               data-tutorial-target={tutorialTarget}
@@ -1664,8 +1711,26 @@ function SageAddIn({ row, allRows, pdfOpen, onClose, onVerify, onUpdate }: {
   onClose: () => void; onVerify: (id: string) => void;
   onUpdate: (id: string, patch: Partial<WorkspaceRow>) => void;
 }) {
+  const [showPdf, setShowPdf] = useState(false)
+  const AI_SUGGESTED_AMOUNT = 5000
+  const [draftAmount, setDraftAmount] = useState<number>(row?.amount || AI_SUGGESTED_AMOUNT)
   if (!row) return null
   const sub = computeSubtotal(row, allRows)
+
+  if (showPdf && row.id === 'eq' && pdfOpen) {
+    return (
+      <aside className="w-[340px] bg-[#F5EFD5] border-l border-bdLt flex flex-col overflow-hidden shrink-0 animate-[slideInRight_220ms_ease-out]">
+        <div className="bg-sage-700 text-white px-4 py-3 flex items-center justify-between text-[13px] font-semibold">
+          <button onClick={() => setShowPdf(false)} className="inline-flex items-center gap-1.5 hover:bg-white/15 rounded px-2 py-0.5 -ml-2" aria-label="Back to Add-In">
+            <span aria-hidden>‹</span>
+            <span>Equipment_Invoice_v1.pdf</span>
+          </button>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/15">✕</button>
+        </div>
+        <PdfPreviewContent amount={row.amount || draftAmount} />
+      </aside>
+    )
+  }
 
   return (
     <aside className="w-[340px] bg-white border-l border-bdLt flex flex-col overflow-hidden shrink-0 animate-[slideInRight_220ms_ease-out]">
@@ -1677,14 +1742,17 @@ function SageAddIn({ row, allRows, pdfOpen, onClose, onVerify, onUpdate }: {
         {row.id === 'eq' && pdfOpen && (
           <>
             <h3 className="text-[14px] font-semibold">Equipment — {row.cellRef}</h3>
-            <div className="bg-yellow-hi border border-amber-bd rounded-md px-2.5 py-2 flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setShowPdf(true)}
+              className="w-full bg-yellow-hi border border-amber-bd rounded-md px-2.5 py-2 flex items-center gap-2.5 text-left hover:bg-yellow-hi/80 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500">
               <span className="text-[14px]">📎</span>
               <div className="flex-1 leading-tight">
                 <div className="text-[11px] font-semibold">Equipment_Invoice_v1.pdf</div>
                 <div className="text-[10px] text-mute">Page 1 · highlighted line</div>
               </div>
               <span className="text-amber-700 font-bold">↗</span>
-            </div>
+            </button>
 
             {row.autoPopulated && !row.verified && (
               <div className="bg-purple-100/50 border border-purple-700/30 rounded-md px-3 py-2.5 space-y-1.5">
@@ -1697,12 +1765,28 @@ function SageAddIn({ row, allRows, pdfOpen, onClose, onVerify, onUpdate }: {
 
             <Stat k="Vendor" v="Heidelberg Engineering Inc." sub="10 Forge Parkway, Franklin MA" />
             <Stat k="Item" v="SPECTRALIS OCT Imaging Module" />
-            <Stat k="Quoted amount" v="$5,000.00" sub="Per invoice line 1" />
+            {row.autoPopulated && !row.verified ? (
+              <div className="space-y-1">
+                <div className="text-[10px] uppercase tracking-widest font-semibold text-sub">Quoted amount</div>
+                <div className="flex items-center border border-bd rounded-md px-2.5 py-1.5 focus-within:border-sage-500 bg-white">
+                  <span className="text-mute text-[12px] mr-1">$</span>
+                  <input
+                    value={draftAmount}
+                    onChange={e => setDraftAmount(Number(e.target.value.replace(/[^0-9.]/g, '')) || 0)}
+                    className="w-full outline-none text-[13px] tabular-nums"
+                    aria-label="Quoted amount"
+                  />
+                </div>
+                <div className="text-[11px] text-mute">Per invoice line 1</div>
+              </div>
+            ) : (
+              <Stat k="Quoted amount" v={`$${(row.amount || draftAmount).toLocaleString()}.00`} sub="Per invoice line 1" />
+            )}
             <Stat k="SAGE object code" v="05-00 Supplies" sub="Suggested by AI" />
 
             {row.autoPopulated && !row.verified && (
               <div className="pt-2">
-                <button onClick={() => onVerify(row.id)}
+                <button onClick={() => { onUpdate(row.id, { amount: draftAmount }); onVerify(row.id) }}
                   className="w-full px-3 py-2 bg-purple-700 text-white rounded-lg text-[12px] font-semibold hover:opacity-90">
                   Approve
                 </button>
@@ -2062,23 +2146,14 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
   )
 }
 
-function PanelHeader({ period, subtotal, onClose, description, role }: {
+function PanelHeader({ onClose }: {
   period: number; subtotal: number; onClose: () => void;
   description?: string; role?: string;
 }) {
   return (
     <div className="bg-surf2 px-5 py-4 flex items-start justify-between border-b border-bdLt gap-3">
       <div className="min-w-0">
-        <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-[20px] font-semibold leading-tight text-ink">Period {period}</span>
-          <span className="text-[16px] font-semibold tabular-nums text-ink">${subtotal.toLocaleString()}</span>
-        </div>
-        {(description || role) && (
-          <div className="mt-1.5 space-y-0.5">
-            {description && <div className="text-[13px] font-medium text-ink truncate">{description}</div>}
-            {role && <div className="text-[11px] text-mute truncate">{role}</div>}
-          </div>
-        )}
+        <span className="text-[20px] font-semibold leading-tight text-ink">Details</span>
       </div>
       <button onClick={onClose} className="w-7 h-7 flex items-center justify-center text-sub hover:text-ink text-[18px] shrink-0" aria-label="Close">✕</button>
     </div>
@@ -2204,26 +2279,9 @@ function Field2({ label, prefix, suffix, value, onChange, placeholder }: {
 // PDF preview panel
 // =====================================================================
 
-function PdfPreviewPanel({ amount, onAmountChange, onClose }: { amount: number; onAmountChange: (amount: number) => void; onClose: () => void }) {
-  const [draftAmount, setDraftAmount] = useState(String(amount))
-  const [validated, setValidated] = useState(false)
-
-  function applyCorrection() {
-    const nextAmount = Number(draftAmount.replace(/[^0-9.]/g, '')) || 0
-    onAmountChange(nextAmount)
-    setDraftAmount(String(nextAmount))
-    setValidated(true)
-  }
-
+function PdfPreviewContent({ amount }: { amount: number }) {
   return (
-    <aside className="w-[280px] bg-[#F5EFD5] border-r border-bdLt flex flex-col overflow-hidden animate-[slideInLeft_220ms_ease-out]">
-      <div className="h-9 px-3.5 flex items-center gap-2 text-[11px] text-mute">
-        <span>📎</span>
-        <span className="font-medium">Equipment_Invoice_v1.pdf</span>
-        <div className="flex-1" />
-        <button onClick={onClose} className="text-sub hover:text-ink">✕</button>
-      </div>
-      <div className="px-4 pb-4 flex-1 overflow-auto space-y-3">
+    <div className="flex-1 overflow-auto space-y-3 px-4 pb-4">
         <div className="bg-white border border-bdLt rounded-lg overflow-hidden shadow-sm">
             <div className="bg-surf2 border-b border-bdLt px-3 py-2 flex items-center justify-between">
               <span className="text-[10px] uppercase tracking-widest font-semibold text-sub">Page preview</span>
@@ -2260,38 +2318,10 @@ function PdfPreviewPanel({ amount, onAmountChange, onClose }: { amount: number; 
             </div>
           </div>
 
-        <div className="bg-white border border-bdLt rounded-lg p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-[10px] uppercase tracking-widest font-semibold text-sub">Validate extracted amount</div>
-              <div className="text-[11px] text-mute">Correct the value if AI pulled the wrong number.</div>
-            </div>
-            {validated && <span className="text-[10px] font-semibold text-sage-700">✓ Validated</span>}
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 flex items-center border border-bd rounded-md px-2.5 py-1.5 focus-within:border-sage-500">
-              <span className="text-mute text-[12px] mr-1">$</span>
-              <input
-                value={draftAmount}
-                onChange={e => { setDraftAmount(e.target.value.replace(/[^0-9.]/g, '')); setValidated(false) }}
-                className="w-full outline-none text-[13px] tabular-nums"
-                aria-label="Correct extracted invoice amount"
-              />
-            </div>
-            {!validated && (
-              <button
-                onClick={applyCorrection}
-                className="px-3 py-2 rounded-md bg-sage-600 text-white text-[11px] font-semibold hover:bg-sage-700 transition"
-              >
-                Apply
-              </button>
-            )}
-          </div>
-        </div>
       </div>
-    </aside>
   )
 }
+
 
 // =====================================================================
 // PERSONNEL DETAIL PANEL — role config + UW auto-populated salary data
@@ -4028,144 +4058,3 @@ export function PlaceholderScreen({ name }: { name: string } & Partial<Nav>) {
   )
 }
 
-// =====================================================================
-// SCREEN — Guide (tutorial / interaction order)
-// =====================================================================
-
-export function GuideScreen({ go, goAwards }: Nav) {
-  return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-page">
-      <Breadcrumb trail={[{ label: 'Guide' }, { label: 'How to walk through this prototype' }]} />
-      <div className="flex-1 overflow-auto">
-        <div className="max-w-[960px] mx-auto px-8 py-10">
-          <div className="mb-8">
-            <div className="text-[10px] font-bold tracking-widest text-sage-700 uppercase">Tutorial</div>
-            <h1 className="text-[28px] font-semibold mt-1">How to interact with this prototype</h1>
-            <p className="text-[14px] text-mute mt-2 max-w-[720px]">
-              Follow the six steps in order. Each step calls out what to click and what to notice.
-              You can jump to any tab at any time using the top nav — the steps below match the intended demo flow.
-            </p>
-          </div>
-
-          <div className="space-y-4">
-            <Step n={1} title="Start in Worksheet" tab="Worksheet tab" jumpLabel="Open Worksheet" onJump={() => go('workspace')}>
-              <ul>
-                <li><b>Worksheet starts blank.</b> Each row has editable input fields (salary, % effort, months, amount).</li>
-                <li>Click <b>"AI prefill all rows"</b> (top right of the Excel grid) to load Potter / Moody / Lupin / McGonagall + Malfoy / Longbottom from similar past proposals.</li>
-                <li>Try editing any cell — subtotals, fringe, F&amp;A and the running total all recalculate live.</li>
-                <li>Set a <b>Proposed total</b> (top-left of the grid) or click <b>"AI suggest"</b> for a recommended value.</li>
-                <li>Notice the mismatch bar at the top — no NoA mismatches yet (gate is closed).</li>
-              </ul>
-            </Step>
-
-            <Step n={2} title="Populate the eGC1 form" tab="eGC1 Forms tab" jumpLabel="Open eGC1 Forms" onJump={() => go('egc1')}>
-              <ul>
-                <li>Click the floating <b>"Copy to eGC1 →"</b> button in Worksheet, or just switch tabs.</li>
-                <li>The eGC1 Budget &amp; Fiscal Compliance section is auto-filled from your Worksheet formulas, mapped to FAS Object Codes.</li>
-                <li>Click <b>"Submit eGC1 to Department"</b> at the bottom to advance.</li>
-              </ul>
-            </Step>
-
-            <Step n={3} title="Upload the Notice of Award" tab="Awards tab → NoA" jumpLabel="Open NoA upload" onJump={() => goAwards('noa')}>
-              <ul>
-                <li>Click anywhere on the <b>dropzone</b> — the demo simulates uploading the NIH R34EY000000 NoA PDF.</li>
-                <li>AI extracts 14 fields (FAIN, totals, dates, PIs, F&amp;A rate). Each has a confidence chip and a source citation back to the PDF section.</li>
-                <li>You'll see a quick diff vs your Worksheet. Click <b>"Resolve Mismatch"</b>.</li>
-              </ul>
-            </Step>
-
-            <Step n={4} title="Open the Worksheet to resolve mismatches" tab="Awards tab → Resolve Mismatch" jumpLabel="Open Resolve Mismatch" onJump={() => goAwards('reconcile')}>
-              <ul>
-                <li>Review the side-by-side amount + date deltas vs the NoA.</li>
-                <li>Optionally click <b>"Notify PI of changes first"</b>.</li>
-                <li>Click <b>"Open Worksheet to Resolve Mismatch"</b> — this is the gate.</li>
-                <li>You're auto-routed back to Worksheet, which now shows the <b>amber resolve-mismatch banner</b>, NoA target $267,006, and a mismatch chip on F&amp;A.</li>
-              </ul>
-            </Step>
-
-            <Step n={5} title="Validate and resolve the mismatch" tab="Worksheet tab" jumpLabel="Back to Worksheet" onJump={() => go('workspace')}>
-              <ul>
-                <li>Click the <b>"Validate"</b> button in the floating dock — surfaces a $41 rounding mismatch.</li>
-                <li>The right-side mismatch panel opens. Click <b>"Apply fix"</b> to resolve to $267,006.</li>
-                <li>The mismatch bar flips to "Balanced ✓".</li>
-              </ul>
-            </Step>
-
-            <Step n={6} title="Submit the Award Setup Request" tab="Awards tab → ASR" jumpLabel="Open ASR" onJump={() => goAwards('asr')}>
-              <ul>
-                <li>Review the mapping: every Worksheet row → SAGE FAS object code.</li>
-                <li>Click <b>"Send SFI reminder to PI"</b> — the demo auto-completes the PI's disclosure after 600ms.</li>
-                <li>Click <b>"Submit ASR"</b>. Routes to Department › OSP › GCA.</li>
-              </ul>
-            </Step>
-          </div>
-
-          <div className="mt-10">
-            <h2 className="text-[16px] font-semibold mb-3">Side panels &amp; toggles you can play with</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <Tip title="AI toggle">
-                Top-right of the Worksheet mismatch bar. Turning AI off hides derived-value chips and source citations so you can see which fields require manual entry.
-              </Tip>
-              <Tip title="PI Review panel">
-                Click <b>"PI Review"</b> in the floating dock. Simulate Dr. Potter approving the budget or requesting changes; reply in the threaded chat.
-              </Tip>
-              <Tip title="PDF preview">
-                Click the <b>📎 attachments icon</b> in the floating dock to slide in the Heidelberg invoice PDF, then click the Equipment row to see the linked line highlighted.
-              </Tip>
-              <Tip title="Live UW rate sources">
-                Click any Grad RA row → the right panel shows live links to the UW Grad School TA/RA salaries page and UW OPB Graduate Tuition Dashboard.
-              </Tip>
-              <Tip title="Files tab">
-                Central library of every document linked to the budget — NoA, invoices, Worksheet export, eGC1 form, reference budgets.
-              </Tip>
-              <Tip title="Budgets tab">
-                Click <b>Budgets</b> in the top nav to see a list of mock SAGE budgets. Selecting one opens the Worksheet.
-              </Tip>
-            </div>
-          </div>
-
-          <div className="mt-10 bg-purple-100/40 border border-purple-700/30 rounded-lg p-4 text-[12px] text-purple-700">
-            <b>✦ Reset tip:</b> reload the page to return Worksheet to its blank starting state and clear the mismatch state. The prototype has no persistence.
-          </div>
-
-          <div className="mt-6 flex items-center justify-between">
-            <a href="/process-overview.html" target="_blank" rel="noopener noreferrer"
-              className="text-[12px] text-sage-700 underline">Open the full process overview ↗</a>
-            <Button variant="primary" onClick={() => go('workspace')} icon={<span>→</span>}>
-              Start the demo — open Worksheet
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function Step({ n, title, tab, jumpLabel, onJump, children }: {
-  n: number; title: string; tab: string; jumpLabel: string; onJump: () => void; children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-card border border-bdLt rounded-xl px-5 py-4 grid grid-cols-[48px_1fr_140px] gap-4 items-start">
-      <div className="w-10 h-10 rounded-lg bg-sage-600 text-white text-[16px] font-bold flex items-center justify-center">{n}</div>
-      <div>
-        <div className="flex items-baseline gap-2 mb-1">
-          <h3 className="text-[15px] font-semibold">{title}</h3>
-          <span className="text-[10px] font-bold uppercase tracking-widest text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">{tab}</span>
-        </div>
-        <div className="text-[13px] text-ink [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1 [&_li]:text-mute [&_li_b]:text-ink">{children}</div>
-      </div>
-      <button onClick={onJump} className="w-full px-3 py-2 rounded-lg bg-sage-50 border border-sage-500 text-sage-700 text-[11px] font-semibold hover:bg-sage-100 transition">
-        {jumpLabel} →
-      </button>
-    </div>
-  )
-}
-
-function Tip({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-card border border-bdLt rounded-lg p-3.5">
-      <div className="text-[12px] font-semibold mb-1">{title}</div>
-      <div className="text-[12px] text-mute leading-relaxed">{children}</div>
-    </div>
-  )
-}

@@ -7,7 +7,6 @@ import {
   FilesScreen,
   BudgetsScreen,
   PlaceholderScreen,
-  GuideScreen,
   type Issue,
   type WorkspaceRow,
   BLANK_ROWS,
@@ -235,7 +234,6 @@ export default function App() {
         {tab === 'awards'    && <AwardsScreen   {...props} />}
         {tab === 'files'     && <FilesScreen    {...props} />}
         {tab === 'budgets'   && <BudgetsScreen  {...props} />}
-        {tab === 'guide'     && <GuideScreen    {...props} />}
         {tab === 'approvals' && <PlaceholderScreen name="Approvals" {...props} />}
         {tab === 'advances'  && <PlaceholderScreen name="Advances"  {...props} />}
         {tab === 'subawards' && <PlaceholderScreen name="Subawards" {...props} />}

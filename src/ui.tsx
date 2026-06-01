@@ -556,10 +556,10 @@ export type StepKey = 'worksheet' | 'egc1' | 'noa' | 'summary' | 'settings' | 'i
 export const STEPS: { key: StepKey; label: string; icon: string }[] = []
 
 // Top-tab navigation — mirrors the SAGE web app
-export type TabKey = 'budgets' | 'egc1' | 'approvals' | 'advances' | 'awards' | 'subawards' | 'workspace' | 'files' | 'guide'
+export type TabKey = 'budgets' | 'egc1' | 'approvals' | 'advances' | 'awards' | 'subawards' | 'workspace' | 'files'
 export type AwardsStep = 'noa' | 'reconcile' | 'asr'
 
-export const TABS: { key: TabKey; label: string; isNew?: boolean; isTutorial?: boolean }[] = [
+export const TABS: { key: TabKey; label: string; isNew?: boolean }[] = [
   { key: 'budgets',   label: 'Budgets' },
   { key: 'egc1',      label: 'eGC1 Forms' },
   { key: 'approvals', label: 'Approvals' },
@@ -568,7 +568,6 @@ export const TABS: { key: TabKey; label: string; isNew?: boolean; isTutorial?: b
   { key: 'subawards', label: 'Subawards' },
   { key: 'workspace', label: 'Worksheet', isNew: true },
   { key: 'files',     label: 'Documents', isNew: true },
-  { key: 'guide',     label: 'Guide',     isTutorial: true },
 ]
 
 export function TopNav({ active, onJump, userName = 'Hermione Granger', tutorialMode = false, onTutorialModeChange }: {
@@ -621,11 +620,6 @@ export function TopNav({ active, onJump, userName = 'Hermione Granger', tutorial
                 <span className={`absolute top-1 right-1 text-[7px] px-1 py-0 rounded-sm font-bold ${
                   isActive ? 'bg-sage-700 text-white' : 'bg-amber-500 text-white'
                 }`}>NEW</span>
-              )}
-              {t.isTutorial && (
-                <span className={`absolute top-1 right-1 text-[9px] ${
-                  isActive ? 'text-sage-700' : 'text-amber-300'
-                }`}>?</span>
               )}
             </button>
           )
@@ -749,7 +743,7 @@ export function FloatingActionBar({ children }: { children: ReactNode }) {
 }
 
 // Styled tooltip that floats above its trigger — 1-2 word labels for the floating bar
-function FloatingTip({ children, label }: { children: ReactNode; label: string }) {
+export function FloatingTip({ children, label }: { children: ReactNode; label: string }) {
   const [hover, setHover] = useState(false)
   return (
     <span className="relative inline-flex items-center"
@@ -862,7 +856,7 @@ export function Footer({ summary }: { summary?: ReactNode }) {
     <footer className="bg-sage-700 text-[#E8F0EB] text-[12px] px-7 py-3.5 flex items-center justify-between">
       <span>University of Washington</span>
       <span>{summary ?? 'About SAGE  ·  Learning  ·  Contact Us'}</span>
-      <span>Release Date: March 2, 2026</span>
+      <span>Release Date: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
     </footer>
   )
 }
@@ -876,11 +870,12 @@ function headerTotalValueClass(value: string, balance: 'match' | 'mismatch' | 'n
   return base + 'text-red'
 }
 
-export function Header({ title, idChip, status, totals, totalsBalance = 'neutral', leading }: {
+export function Header({ title, idChip, status, totals, totalsBalance = 'neutral', leading, trailingChip }: {
   title: ReactNode; idChip: string; status?: string;
   totals?: { label: string; value: string }[];
   totalsBalance?: 'match' | 'mismatch' | 'neutral';
   leading?: ReactNode;
+  trailingChip?: ReactNode;
 }) {
   return (
     <header className="bg-white border-b border-bdLt px-7 py-4 flex items-center gap-4">
@@ -888,8 +883,9 @@ export function Header({ title, idChip, status, totals, totalsBalance = 'neutral
       <button className="text-mute text-xl">‹</button>
       {typeof title === 'string' ? <h1 className="text-[16px] font-semibold">{title}</h1> : title}
       <span className="text-[13px] text-mute">({idChip})</span>
+      {trailingChip}
       {status && <span className="text-[13px] font-medium text-sage-700">{status}</span>}
-      <span className="text-sub text-xs">ⓘ</span>
+      {status && <span className="text-sub text-xs">ⓘ</span>}
       <div className="flex-1" />
       <div className="flex gap-8">
         {(totals || [
