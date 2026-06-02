@@ -32,73 +32,52 @@ const TUTORIAL_STEPS: GuidedStep[] = [
   },
   {
     tab: 'workspace',
-    eyebrow: 'Step 2 · Suggested total',
-    title: 'Use AI to suggest a total',
-    body: 'Click AI suggest next to Proposed total. SAGE estimates a starting target from similar past proposals so the budget has something to balance against.',
-    target: 'proposed-total-suggest',
-  },
-  {
-    tab: 'workspace',
-    eyebrow: 'Step 3 · Department',
+    eyebrow: 'Step 2 · Department',
     title: 'Select the department rate table',
     body: 'Use the Department dropdown in the setup row. This ties the workspace to the matching UW variable RA salary schedule group for the budget.',
     target: 'department-select',
   },
   {
     tab: 'workspace',
-    eyebrow: 'Step 4 · Name',
+    eyebrow: 'Step 3 · Name',
     title: 'Type the person or item name',
     body: 'Start by typing into the first personnel Name field. With AI Assist on, SAGE can suggest likely people or budget items based on similar proposals.',
     target: 'name-input',
   },
   {
     tab: 'workspace',
-    eyebrow: 'Step 5 · Role',
+    eyebrow: 'Step 4 · Role',
     title: 'Select roles in the worksheet',
     body: 'For personnel rows, use the Role dropdown to choose PI, Grad-PhD, Grad-Master, or Bachelor. The right panel opens with UW source data for that role.',
     target: 'role-select',
   },
   {
     tab: 'workspace',
-    eyebrow: 'Step 6 · Period update',
+    eyebrow: 'Step 5 · Period update',
     title: 'Confirm role period details',
     body: 'Review the side panel and save the role period details. This is where AI helps in the backend by initially populating UW source data, schedule, level, base FTE, salary, and related period fields for review.',
     target: 'role-period-update',
   },
   {
     tab: 'workspace',
-    eyebrow: 'Step 7 · Upload',
+    eyebrow: 'Step 6 · Attachments',
     title: 'Upload source documents',
-    body: 'Click Upload in the floating toolbar to attach PDFs or other source files. SAGE can OCR and suggest which worksheet row the document supports.',
+    body: 'Click the Attachments button in the floating toolbar to attach PDFs or other source files. SAGE can OCR and suggest which worksheet row the document supports.',
     target: 'upload-button',
   },
   {
     tab: 'workspace',
-    eyebrow: 'Step 8 · Attachments',
-    title: 'Show or hide the PDF preview',
-    body: 'Use the paperclip button to open or hide the attachment/PDF preview. Linked documents can stay visible while you review or reconcile rows.',
-    target: 'attachment-button',
-  },
-  {
-    tab: 'workspace',
-    eyebrow: 'Step 9 · Validate',
-    title: 'Validate budget mismatches',
-    body: 'Click Validate to scan the workspace for budget issues. Mismatch panels explain what is wrong and offer fixes when totals do not match.',
-    target: 'validate-button',
-  },
-  {
-    tab: 'workspace',
-    eyebrow: 'Step 10 · PI Review',
+    eyebrow: 'Step 7 · PI Review',
     title: 'Send the budget to PI review',
     body: 'Use PI Review to send the current budget to the PI. The review panel tracks comments, replies, and simulated decisions in the prototype.',
     target: 'pi-review-button',
   },
   {
     tab: 'workspace',
-    eyebrow: 'Step 11 · Copy to eGC1',
-    title: 'Copy the workspace into eGC1',
-    body: 'When the workspace is ready, click Copy to eGC1. This moves the budget into the eGC1 form flow so it can be submitted.',
-    target: 'copy-egc1-button',
+    eyebrow: 'Step 8 · Save Budget',
+    title: 'Save the budget',
+    body: 'Click Save Budget to save this budget. Once saved, it will appear as a new entry on the Budgets tab.',
+    target: 'save-budget-button',
   },
 ]
 
@@ -128,6 +107,10 @@ export default function App() {
   const [egc1Submitted, setEgc1Submitted] = useState(capturePreset.egc1Submitted ?? false)
   const [openBudgetId, setOpenBudgetId] = useState<string | null>(null)
   const [asrSubmitCount, setAsrSubmitCount] = useState(0)
+  const [savedBudgets, setSavedBudgets] = useState<{ id: string; title: string }[]>([])
+  function addSavedBudget(entry: { id: string; title: string }) {
+    setSavedBudgets(prev => [...prev, entry])
+  }
 
   function go(t: TabKey) {
     setTab(t)
@@ -184,6 +167,9 @@ export default function App() {
     const currentStep = TUTORIAL_STEPS[tutorialIndex]
     const selector = `[data-tutorial-target="${currentStep.target}"]`
 
+    // Step 1's target is the entire workspace grid, so any click inside would
+    // auto-advance instantly. Keep step 1 user-driven (Next button only).
+    if (currentStep.target === 'workspace') return
     function advanceFromTarget(event: Event) {
       if ((currentStep.target === 'department-select' || currentStep.target === 'role-select') && event.type !== 'change') return
       if (currentStep.target === 'name-input' && event.type !== 'input' && event.type !== 'pointerdown' && event.type !== 'mousedown') return
@@ -218,6 +204,7 @@ export default function App() {
     awardsStep, setAwardsStep,
     openBudgetId, setOpenBudgetId,
     asrSubmitCount, setAsrSubmitCount,
+    savedBudgets, addSavedBudget,
   }
 
   return (
@@ -239,7 +226,7 @@ export default function App() {
         {tab === 'subawards' && <PlaceholderScreen name="Subawards" {...props} />}
       </main>
       <TutorialOverlay
-        show={tutorialMode && !tutorialBubbleHidden}
+        show={tutorialMode && !tutorialBubbleHidden && tab === 'workspace'}
         step={TUTORIAL_STEPS[tutorialIndex]}
         index={tutorialIndex}
         total={TUTORIAL_STEPS.length}
