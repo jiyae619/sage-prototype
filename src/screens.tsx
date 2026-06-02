@@ -311,7 +311,7 @@ export type Nav = {
   toast: (m: string) => void;
   aiOn: boolean; setAiOn: (v: boolean) => void;
   issues: Issue[]; setIssues: (fn: ((prev: Issue[]) => Issue[]) | Issue[]) => void;
-  rows: WorkspaceRow[]; setRows: (rows: WorkspaceRow[]) => void;
+  rows: WorkspaceRow[]; setRows: (fn: ((prev: WorkspaceRow[]) => WorkspaceRow[]) | WorkspaceRow[]) => void;
   proposedTotal: number; setProposedTotal: (v: number) => void;
   noaUploaded: boolean; setNoaUploaded: (v: boolean) => void;
   reconciliationActive: boolean; setReconciliationActive: (v: boolean) => void;
@@ -350,7 +350,7 @@ export function WorkspaceScreen(props: Nav & {
   const {
     go, goAwards, toast, aiOn,
     issues, setIssues, rows, setRows,
-    proposedTotal, setProposedTotal,
+    proposedTotal,
     reconciliationActive, egc1Submitted,
     captureUi,
   } = props
@@ -393,12 +393,6 @@ export function WorkspaceScreen(props: Nav & {
   const totalsBalance: 'match' | 'mismatch' | 'neutral' = !hasTarget ? 'neutral' : (delta === 0 ? 'match' : 'mismatch')
   const isFilled = rows.some(r => r.label !== '' || r.amount || r.monthlySalary)
   const activeMismatch = issues[mismatchIndex] ?? issues[0]
-
-  function aiPrefill() {
-    setRows(AI_PREFILL)
-    if (proposedTotal === 0) setProposedTotal(265000)
-    toast('AI prefilled rows from 3 similar NIH R34 vision proposals.')
-  }
 
   function copyProposalBudget(rowsToCopy: WorkspaceRow[]): () => void {
     const previous = rows.map(r => ({ ...r }))
@@ -4057,4 +4051,3 @@ export function PlaceholderScreen({ name }: { name: string } & Partial<Nav>) {
     </div>
   )
 }
-
