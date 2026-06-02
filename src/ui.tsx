@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 // =====================================================================
 // SHARED ATOMS — these mirror the Figma Components page
@@ -90,14 +90,14 @@ export function ConfidenceChip({ level }: { level: 'high' | 'medium' | 'low' }) 
     medium: { dot: 'bg-yellow-hi', label: 'Medium Confidence', tip: 'Derived from a structured rate table. Requires GM confirmation if rate effective date is older than 6 months.' },
     low:    { dot: 'bg-red',       label: 'Low Confidence',    tip: 'Suggested from similar past budgets. Verify before accepting.' },
   }[level]
-  return (
-    <HoverTip tip={cfg.tip} label={cfg.label}>
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-surf2 text-mute border border-bdLt whitespace-nowrap leading-none">
-        <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} aria-hidden></span>
-        <span className="whitespace-nowrap">{cfg.label}</span>
-      </span>
-    </HoverTip>
+  const chip = (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-surf2 text-mute border border-bdLt whitespace-nowrap leading-none">
+      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} aria-hidden></span>
+      <span className="whitespace-nowrap">{cfg.label}</span>
+    </span>
   )
+  if (level === 'high') return chip
+  return <HoverTip tip={cfg.tip} label={cfg.label}>{chip}</HoverTip>
 }
 
 // PURPLE MEMO: Source tag with hover popover preview
@@ -174,17 +174,37 @@ export function TutorialOverlay({
   onClose: () => void;
 }) {
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null)
+  const [measured, setMeasured] = useState(false)
+  const bubbleRef = useRef<HTMLDivElement | null>(null)
+  const [bubbleHeight, setBubbleHeight] = useState(205)
+
+  // Measure synchronously before paint to avoid the first-frame jump.
+  useLayoutEffect(() => {
+    if (!show) return
+    const target = document.querySelector(`[data-tutorial-target="${step.target}"]`)
+    setTargetRect(target?.getBoundingClientRect() ?? null)
+    setMeasured(true)
+  }, [show, step.target])
+
+  // Measure the bubble's actual height so positioning hugs the target instead
+  // of relying on a static estimate (which left a noticeable gap above buttons).
+  useLayoutEffect(() => {
+    if (!show || !bubbleRef.current) return
+    const h = bubbleRef.current.getBoundingClientRect().height
+    if (h && Math.abs(h - bubbleHeight) > 1) setBubbleHeight(h)
+  })
 
   useEffect(() => {
     if (!show) return
 
     function updateTargetRect(scrollToTarget = false) {
       const target = document.querySelector(`[data-tutorial-target="${step.target}"]`)
-      if (!target) return setTargetRect(null)
+      if (!target) { setTargetRect(null); setMeasured(true); return }
       if (scrollToTarget) target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
       window.setTimeout(() => {
         const nextTarget = document.querySelector(`[data-tutorial-target="${step.target}"]`)
         setTargetRect(nextTarget?.getBoundingClientRect() ?? null)
+        setMeasured(true)
       }, 180)
     }
 
@@ -199,30 +219,30 @@ export function TutorialOverlay({
   }, [show, step.target])
 
   if (!show) return null
+  if (!measured) return null
   const width = 278
   const gap = 12
-  const estimatedBubbleHeight = 205
-  const toolbarLift = 82
   const viewportWidth = typeof window === 'undefined' ? 1024 : window.innerWidth
   const viewportHeight = typeof window === 'undefined' ? 768 : window.innerHeight
   const fallbackTop = 96
   const fallbackLeft = Math.max(16, viewportWidth - width - 16)
   const targetCenterX = targetRect ? targetRect.left + targetRect.width / 2 : fallbackLeft + width / 2
-  const isBottomTarget = !!targetRect && targetRect.top > viewportHeight * 0.65
-  const placeAbove = !!targetRect && (isBottomTarget || (targetRect.bottom + 190 > viewportHeight && targetRect.top > 190))
+  // Place above when there isn't enough room below, otherwise below the target.
+  const placeAbove = !!targetRect && (targetRect.bottom + bubbleHeight + gap > viewportHeight)
   const bubbleLeft = targetRect
     ? Math.min(Math.max(16, targetCenterX - width / 2), viewportWidth - width - 16)
     : fallbackLeft
   const bubbleTop = targetRect
     ? placeAbove
-      ? Math.max(16, targetRect.top - estimatedBubbleHeight - gap - (isBottomTarget ? toolbarLift : 0))
-      : Math.min(targetRect.bottom + gap, viewportHeight - estimatedBubbleHeight - 16)
+      ? Math.max(16, targetRect.top - bubbleHeight - gap)
+      : Math.min(targetRect.bottom + gap, viewportHeight - bubbleHeight - 16)
     : fallbackTop
   const arrowLeft = targetRect ? Math.min(Math.max(18, targetCenterX - bubbleLeft - 6), width - 24) : width - 42
 
   return (
     <div className="fixed inset-0 z-[70] pointer-events-none" aria-live="polite">
       <div
+        ref={bubbleRef}
         className="absolute w-[278px] max-w-[calc(100vw-24px)] bg-card/75 backdrop-blur-md border border-sage-100/80 rounded-xl shadow-lg pointer-events-auto overflow-visible"
         style={{ left: bubbleLeft, top: bubbleTop }}
       >
@@ -582,7 +602,7 @@ export function TopNav({ active, onJump, userName = 'Hermione Granger', tutorial
       <div className="flex items-center px-6 py-2 border-b border-sage-900/30 gap-3">
         <div className="text-[18px] font-bold tracking-wide">SAGE</div>
         <div className="flex-1" />
-        {onTutorialModeChange && (
+        {onTutorialModeChange && active === 'workspace' && (
           <button
             type="button"
             role="switch"

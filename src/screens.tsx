@@ -244,6 +244,34 @@ export const INITIAL_ISSUES: Issue[] = [
   },
 ]
 
+// Nudge one MTDC row + one excluded row so totalsOf(rows).total === target exactly.
+// Used when all mismatches are resolved so every "red delta" on the page flips green.
+function snapRowsToTarget(rows: WorkspaceRow[], target: number): WorkspaceRow[] {
+  const currentTotal = totalsOf(rows).total
+  if (currentTotal === target) return rows
+  const faRate = (rows.find(r => r.category === 'fa')?.faRate ?? 57.5) / 100
+  const diff = target - currentTotal
+  // Approximate via supplies (in MTDC base — Δ propagates through F&A).
+  let next = rows.map(r => r.id === 'sup' ? { ...r, amount: (r.amount || 0) + Math.round(diff / (1 + faRate)) } : r)
+  // Absorb the rounding remainder via tuition (excludedFromMtdc — Δ flows straight to total).
+  const remainder = target - totalsOf(next).total
+  if (remainder !== 0) {
+    next = next.map(r => {
+      if (r.id !== 'tuit') return r
+      const students = Math.max(r.numStudents || 0, 1)
+      const quarters = Math.max((r.months || 0) / 3, 1)
+      const perQDelta = remainder / (students * quarters)
+      return { ...r, tuitionPerQuarter: Math.round((r.tuitionPerQuarter || 0) + perQDelta) }
+    })
+  }
+  // Final ±$1 catch — push any leftover into supplies (excluded F&A multiplier ignored at this size).
+  const final = target - totalsOf(next).total
+  if (final !== 0) {
+    next = next.map(r => r.id === 'sup' ? { ...r, amount: (r.amount || 0) + final } : r)
+  }
+  return next
+}
+
 export function computeSubtotal(row: WorkspaceRow, allRows: WorkspaceRow[]): number {
   switch (row.category) {
     case 'personnel': {
@@ -319,6 +347,8 @@ export type Nav = {
   awardsStep: AwardsStep; setAwardsStep: (s: AwardsStep) => void;
   openBudgetId: string | null; setOpenBudgetId: (id: string | null) => void;
   asrSubmitCount: number; setAsrSubmitCount: (v: number) => void;
+  savedBudgets: { id: string; title: string }[];
+  addSavedBudget: (entry: { id: string; title: string }) => void;
 }
 
 // =====================================================================
@@ -352,7 +382,7 @@ export function WorkspaceScreen(props: Nav & {
     issues, setIssues, rows, setRows,
     proposedTotal,
     reconciliationActive, egc1Submitted,
-    captureUi,
+    captureUi, savedBudgets, addSavedBudget,
   } = props
   const [selectedRow, setSelectedRow] = useState<string | null>(
     captureUi?.mismatchView ? 'fa' : null
@@ -382,7 +412,7 @@ export function WorkspaceScreen(props: Nav & {
   const [piComment, setPiComment] = useState('')
   const [raDepartmentId, setRaDepartmentId] = useState('')
   const [mismatchIndex, setMismatchIndex] = useState(0)
-  const [mismatchResolveClicked, setMismatchResolveClicked] = useState(false)
+  const [budgetSaved, setBudgetSaved] = useState(false)
   const raDepartment = UW_VARIABLE_RA_DEPARTMENTS.find(d => d.id === raDepartmentId) ?? UW_VARIABLE_RA_DEPARTMENTS[0]
 
   const NOA_TOTAL = 267006
@@ -447,6 +477,10 @@ export function WorkspaceScreen(props: Nav & {
       setSelectedRow(remaining[nextIdx]?.cellRef?.replace(/[^a-z0-9]/gi, '').toLowerCase() ?? 'fa')
       toast(`Mismatch ${mismatchIndex + 1} fixed. ${remaining.length} remaining.`)
     } else {
+      // All mismatches resolved — snap rows so the worksheet total exactly
+      // matches the NoA target, which flips every red delta on the page to green.
+      setRows(prev => snapRowsToTarget(prev, NOA_TOTAL))
+      setProposedTotal(NOA_TOTAL)
       setMismatchView(false)
       setMismatchIndex(0)
       toast(`All mismatches resolved. Budget aligned to $${NOA_TOTAL.toLocaleString()}.`)
@@ -507,16 +541,6 @@ export function WorkspaceScreen(props: Nav & {
         { label: 'Worksheet', onClick: () => {} },
         { label: 'Test 1 · A224134' },
       ]} />
-
-      {/* Reconciliation gate banner (only when active) */}
-      {reconciliationActive && (
-        <div className="bg-amber-50 border-b border-amber-bd px-6 py-2 flex items-center gap-3 text-[12px]">
-          <span className="text-amber-700">⚠</span>
-          <span className="text-amber-700 font-medium">Resolving mismatch against NoA — target $267,006 · NIH R34EY000000</span>
-          <div className="flex-1" />
-          <button onClick={() => goAwards('reconcile')} className="text-[11px] text-amber-700 underline">View mismatches</button>
-        </div>
-      )}
 
       <Header
         title={
@@ -633,8 +657,8 @@ export function WorkspaceScreen(props: Nav & {
           </>}
           {reconciliationActive && issues.length > 0 && (
             <button
-              onClick={() => { setMismatchResolveClicked(true); openMismatch(0) }}
-              className={`ml-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-red text-white text-[12px] font-bold shadow-[0_0_0_0_rgba(185,28,28,0.55)] hover:bg-red transition${mismatchResolveClicked ? '' : ' animate-mismatch-pulse'}`}>
+              onClick={() => openMismatch(0)}
+              className="ml-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-red text-white text-[12px] font-bold shadow-[0_0_0_0_rgba(185,28,28,0.55)] hover:bg-red transition">
               <span aria-hidden>⚠</span>
               {issues.length} mismatch{issues.length > 1 ? 'es' : ''} · Resolve →
             </button>
@@ -1045,14 +1069,41 @@ export function WorkspaceScreen(props: Nav & {
           <FloatingBtn tooltip="Send to PI for review" onClick={sendForPiReview} icon={<SendReviewIcon />} label="PI Review" tutorialTarget="pi-review-button" />
           <span className="w-px h-6 bg-bd mx-1 shrink-0" aria-hidden />
           {!egc1Submitted ? (
-            <button onClick={() => { toast('eGC1 auto-populated from Worksheet.'); go('egc1') }}
-              data-tutorial-target="copy-egc1-button"
+            <button onClick={() => {
+                if (budgetSaved) return
+                const nextNum = 280000 + savedBudgets.length
+                const newId = `B${nextNum}`
+                const title = (newTitle && newTitle !== 'New Budget Worksheet') ? newTitle : (workspaceTitle && workspaceTitle !== 'Test 1' ? workspaceTitle : 'New Budget Worksheet')
+                addSavedBudget({ id: newId, title })
+                setBudgetSaved(true)
+                toast(`Budget saved as ${newId}.`)
+              }}
+              data-tutorial-target="save-budget-button"
+              disabled={budgetSaved}
               className={`inline-flex items-center gap-1.5 px-3.5 h-9 rounded-full text-[12px] font-semibold whitespace-nowrap leading-none transition shrink-0 ${
-                isFilled
+                budgetSaved
+                  ? 'bg-sage-700 text-white cursor-default'
+                  : isFilled
                   ? 'bg-sage-600 text-white hover:bg-sage-700'
                   : 'bg-white text-sage-700 border border-sage-600 hover:bg-sage-50'
               }`}>
-              Copy to eGC1 <span aria-hidden>→</span>
+              {budgetSaved ? (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  Budget Saved
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                    <polyline points="17 21 17 13 7 13 7 21" />
+                    <polyline points="7 3 7 8 15 8" />
+                  </svg>
+                  Save Budget
+                </>
+              )}
             </button>
           ) : reconciliationActive ? (
             <button onClick={() => goAwards('asr')}
@@ -2530,28 +2581,19 @@ function PIReviewPanel({ status, piComment, onPiCommentChange, onSimulateDecisio
           <div className="text-[10px] text-sub">+ Multi-PIs: Alastor Moody, Remus Lupin, Minerva McGonagall</div>
         </div>
         <div className="border-t border-bdLt" />
-        {status === 'sent' && replies.length === 0 && (
-          <div className="space-y-2">
-            <p className="text-[11px] text-mute leading-relaxed">Waiting for Dr. Potter to respond.</p>
-            <button onClick={() => onSimulateDecision('approved')} className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-surf2 border border-bd rounded-lg text-[12px] font-medium text-ink hover:bg-white">
-              <span>↻</span> Refresh status (simulate approval)
-            </button>
-            <button onClick={() => onSimulateDecision('changes_requested')} className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-white border border-bd rounded-lg text-[11px] text-mute hover:bg-surf2">
-              Simulate: PI requests changes
-            </button>
-          </div>
-        )}
-        {(status === 'approved' || status === 'changes_requested') && (
+        {(status === 'approved' || status === 'changes_requested' || replies.length > 0) && (
           <div className="space-y-3">
             <div className="text-[10px] uppercase tracking-widest text-sub font-semibold">Conversation</div>
-            <div className={`bg-${status === 'approved' ? 'surf2' : 'red-50'} ${status === 'changes_requested' ? 'border border-red/20' : ''} rounded-lg px-3 py-2.5 space-y-1`}>
-              <div className="text-[11px] text-mute">Dr. Harry Potter · just now</div>
-              <p className="text-[12px] text-ink leading-relaxed">
-                {status === 'approved'
-                  ? 'Looks good overall. Grad RA salary and tuition numbers for Draco and Neville match what I expected. Approved.'
-                  : 'Please revisit the international travel line and confirm Neville\'s effort level for this period.'}
-              </p>
-            </div>
+            {(status === 'approved' || status === 'changes_requested') && (
+              <div className={`bg-${status === 'approved' ? 'surf2' : 'red-50'} ${status === 'changes_requested' ? 'border border-red/20' : ''} rounded-lg px-3 py-2.5 space-y-1`}>
+                <div className="text-[11px] text-mute">Dr. Harry Potter · just now</div>
+                <p className="text-[12px] text-ink leading-relaxed">
+                  {status === 'approved'
+                    ? 'Looks good overall. Grad RA salary and tuition numbers for Draco and Neville match what I expected. Approved.'
+                    : 'Please revisit the international travel line and confirm Neville\'s effort level for this period.'}
+                </p>
+              </div>
+            )}
             {replies.map((r, i) => (
               <div key={i} className="flex justify-end">
                 <div className="max-w-[85%] bg-sage-600 text-white rounded-xl rounded-br-sm px-3 py-2 space-y-0.5">
@@ -2560,6 +2602,21 @@ function PIReviewPanel({ status, piComment, onPiCommentChange, onSimulateDecisio
                 </div>
               </div>
             ))}
+          </div>
+        )}
+        {status === 'sent' && (
+          <div className="space-y-2">
+            <p className="text-[11px] text-mute leading-relaxed">
+              {replies.length === 0 ? 'Waiting for Dr. Potter to respond.' : 'Reply sent. Refresh to check if Dr. Potter has approved.'}
+            </p>
+            <button onClick={() => onSimulateDecision('approved')} className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-surf2 border border-bd rounded-lg text-[12px] font-medium text-ink hover:bg-white">
+              <span>↻</span> Refresh status
+            </button>
+            {replies.length === 0 && (
+              <button onClick={() => onSimulateDecision('changes_requested')} className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-white border border-bd rounded-lg text-[11px] text-mute hover:bg-surf2">
+                Simulate: PI requests changes
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -2694,33 +2751,82 @@ function StepCard({ n, status, statusLabel, title, desc }: {
   n: number; status: StepStatus; statusLabel: string; title: string; desc: string;
 }) {
   const s = {
-    done:    { border: 'border-sage-100', bg: 'bg-sage-50',  badge: 'bg-sage-600',  pill: 'bg-sage-100 text-sage-700',   icon: '✓',  step: 'text-sage-700' },
-    active:  { border: 'border-amber-bd', bg: 'bg-amber-50', badge: 'bg-amber-500', pill: 'bg-amber-100 text-amber-700', icon: '⏳', step: 'text-amber-700' },
-    waiting: { border: 'border-bdLt',     bg: 'bg-surf2',    badge: 'bg-bd',        pill: 'bg-card text-sub border border-bdLt', icon: '○', step: 'text-sub' },
+    done: {
+      bg: 'bg-white',
+      ring: 'ring-1 ring-sage-100',
+      accent: 'bg-gradient-to-b from-sage-500 to-sage-700',
+      badgeBg: 'bg-sage-600 text-white',
+      pill: 'bg-sage-50 text-sage-700 ring-1 ring-sage-100',
+      stepLabel: 'text-sage-700',
+      icon: (
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      ),
+    },
+    active: {
+      bg: 'bg-gradient-to-br from-amber-50 to-white',
+      ring: 'ring-1 ring-amber-bd shadow-[0_0_0_4px_rgba(232,200,121,0.12)]',
+      accent: 'bg-gradient-to-b from-amber-400 to-amber-600',
+      badgeBg: 'bg-amber-500 text-white',
+      pill: 'bg-amber-100 text-amber-700 ring-1 ring-amber-bd',
+      stepLabel: 'text-amber-700',
+      icon: (
+        <span className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-60" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+        </span>
+      ),
+    },
+    waiting: {
+      bg: 'bg-white',
+      ring: 'ring-1 ring-bdLt',
+      accent: 'bg-bd',
+      badgeBg: 'bg-surf2 text-sub ring-1 ring-bdLt',
+      pill: 'bg-surf2 text-sub ring-1 ring-bdLt',
+      stepLabel: 'text-sub',
+      icon: <span className="text-[10px] font-semibold leading-none">{n}</span>,
+    },
   }[status]
   return (
-    <div className={`border ${s.border} ${s.bg} rounded-xl p-4`}>
-      <div className="flex items-center gap-1.5 mb-2">
-        <span className={`w-4 h-4 rounded-full ${s.badge} text-white flex items-center justify-center text-[9px] font-bold`}>{s.icon}</span>
-        <div className={`text-[10px] font-semibold uppercase tracking-widest ${s.step}`}>Step {n}</div>
-        <span className={`ml-auto text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${s.pill}`}>{statusLabel}</span>
+    <div className={`relative overflow-hidden rounded-2xl ${s.bg} ${s.ring} p-4 pl-5 transition hover:-translate-y-0.5 hover:shadow-md`}>
+      <span className={`absolute left-0 top-0 h-full w-[3px] ${s.accent}`} aria-hidden />
+      <div className="flex items-center gap-2 mb-2.5">
+        <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold ${s.badgeBg}`}>
+          {s.icon}
+        </span>
+        <span className={`text-[9px] font-semibold uppercase tracking-[0.14em] ${s.stepLabel}`}>Step {n}</span>
+        <span className={`ml-auto text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${s.pill}`}>{statusLabel}</span>
       </div>
-      <div className="text-[13px] font-semibold text-ink">{title}</div>
+      <div className="text-[14px] font-semibold text-ink leading-tight">{title}</div>
       <div className="text-[12px] text-mute mt-1 leading-relaxed">{desc}</div>
     </div>
   )
 }
 
-export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitted }: Nav) {
+export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitted, savedBudgets }: Nav) {
   const isFilled = rows.some(r => r.label !== '' || r.amount || r.monthlySalary)
   const totals = totalsOf(rows)
+  const allKnownBudgets = [
+    { id: 'B158116', title: 'Eye Conditions Evaluation' },
+    ...savedBudgets,
+    { id: 'B161463', title: 'NASA Linking Lakes' },
+    { id: 'B167902', title: 'Glaucoma Cohort Study' },
+  ]
+  const [connectedBudgetId, setConnectedBudgetId] = useState('')
+  const connectedBudget = allKnownBudgets.find(b => b.id === connectedBudgetId)
+  // Numbers from the chosen budget. In this prototype, only the workspace-linked
+  // budgets (B158116 + any saved budget) share their figures with the eGC1 table.
+  const budgetIsLinkedToWorkspace = connectedBudgetId === 'B158116' || savedBudgets.some(b => b.id === connectedBudgetId)
+  const displayTotals = budgetIsLinkedToWorkspace ? totals : { directCosts: 0, fa: 0, mtdcBase: 0, total: 0 }
 
-  // Map workspace categories to FAS object codes
-  const personnelSum = rows.filter(r => r.category === 'personnel').reduce((s, r) => s + computeSubtotal(r, rows), 0)
-  const fringeSum    = rows.filter(r => r.category === 'fringe').reduce((s, r) => s + computeSubtotal(r, rows), 0)
-  const travelSum    = rows.filter(r => r.category === 'travel').reduce((s, r) => s + computeSubtotal(r, rows), 0)
-  const suppliesSum  = rows.filter(r => r.category === 'supplies' || r.category === 'equipment').reduce((s, r) => s + computeSubtotal(r, rows), 0)
-  const tuitionSum   = rows.filter(r => r.category === 'tuition').reduce((s, r) => s + computeSubtotal(r, rows), 0)
+  // Map workspace categories to FAS object codes. Only flow figures into the
+  // eGC1 table when the chosen budget is the one tied to this workspace.
+  const personnelSum = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'personnel').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
+  const fringeSum    = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'fringe').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
+  const travelSum    = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'travel').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
+  const suppliesSum  = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'supplies' || r.category === 'equipment').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
+  const tuitionSum   = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'tuition').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
 
   const codes = [
     { code: '01', desc: 'Salaries and Wages',          period1: personnelSum },
@@ -2764,7 +2870,7 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
                 Next, wait for sponsor approval and upload the Notice of Award when it arrives.
               </p>
 
-              <div className="mt-7 grid grid-cols-3 gap-3 text-left">
+              <div className="mt-7 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-left">
                 <StepCard n={1} status="done"    statusLabel="Reviewed" title="Submitted"     desc="eGC1 submitted from Worksheet for routing." />
                 <StepCard n={2} status="done"    statusLabel="Reviewed" title="Department"    desc="Departmental staff verified the budget and routed it forward." />
                 <StepCard n={3} status="active"  statusLabel="In Review" title="Dept Chair"   desc="The Department Chair is currently reviewing this submission." />
@@ -2856,16 +2962,40 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
           </div>
 
           <h2 className="text-[15px] font-semibold text-sage-700 mb-2">Connect a SAGE Budget</h2>
-          <div className="flex items-center justify-between gap-4 mb-6">
-            <p className="text-[13px] text-sage-700 underline cursor-pointer">
-              (B158116) A224134 Test 1
-            </p>
+          <div className="grid grid-cols-[1fr_1fr_auto] gap-3 items-end mb-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-widest font-semibold text-sub mb-1">Budget ID</div>
+              <input
+                type="text"
+                value={connectedBudgetId}
+                onChange={e => setConnectedBudgetId(e.target.value)}
+                placeholder="e.g., B158116"
+                className="w-full px-3 py-2 border border-bd rounded-md text-[13px] font-mono focus:outline-none focus:border-sage-500"
+              />
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-widest font-semibold text-sub mb-1">Or pick from Budgets</div>
+              <select
+                value={allKnownBudgets.some(b => b.id === connectedBudgetId) ? connectedBudgetId : ''}
+                onChange={e => setConnectedBudgetId(e.target.value)}
+                className="w-full px-3 py-2 border border-bd rounded-md text-[13px] bg-white focus:outline-none focus:border-sage-500">
+                <option value="">Select a budget…</option>
+                {allKnownBudgets.map(b => (
+                  <option key={b.id} value={b.id}>({b.id}) {b.title}</option>
+                ))}
+              </select>
+            </div>
             <button
               onClick={() => go('workspace')}
-              className="text-[12px] text-sage-700 underline underline-offset-2 font-medium hover:text-sage-900 shrink-0">
+              className="px-3 py-2 text-[12px] text-sage-700 underline underline-offset-2 font-medium hover:text-sage-900 whitespace-nowrap">
               Edit in Worksheet ↗
             </button>
           </div>
+          <p className="text-[12px] text-sage-700 mb-6">
+            {connectedBudget
+              ? <>Connected: <span className="font-semibold">({connectedBudget.id}) {connectedBudget.title}</span></>
+              : <span className="text-amber-700">No budget connected — enter a Budget ID or pick from the list.</span>}
+          </p>
 
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-[15px] font-semibold text-sage-700">eGC1 Budget</h2>
@@ -2908,20 +3038,20 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
             <div className="grid grid-cols-[80px_1fr_140px_140px] bg-page text-[13px]">
               <div className="px-3 py-2.5 border-r border-bdLt"></div>
               <div className="px-3 py-2.5 border-r border-bdLt text-mute">Amount subject to F&A cost base (MTDC)</div>
-              <div className="px-3 py-2.5 border-r border-bdLt text-right tabular-nums text-mute">{totals.mtdcBase.toLocaleString()}</div>
-              <div className="px-3 py-2.5 text-right tabular-nums text-mute">{totals.mtdcBase.toLocaleString()}</div>
+              <div className="px-3 py-2.5 border-r border-bdLt text-right tabular-nums text-mute">{displayTotals.mtdcBase.toLocaleString()}</div>
+              <div className="px-3 py-2.5 text-right tabular-nums text-mute">{displayTotals.mtdcBase.toLocaleString()}</div>
             </div>
             <div className="grid grid-cols-[80px_1fr_140px_140px] bg-page text-[13px]">
               <div className="px-3 py-2.5 border-r border-bdLt"></div>
               <div className="px-3 py-2.5 border-r border-bdLt text-mute">F&A indirect costs (57.5% MTDC)</div>
-              <div className="px-3 py-2.5 border-r border-bdLt text-right tabular-nums text-mute">{totals.fa.toLocaleString()}</div>
-              <div className="px-3 py-2.5 text-right tabular-nums text-mute">{totals.fa.toLocaleString()}</div>
+              <div className="px-3 py-2.5 border-r border-bdLt text-right tabular-nums text-mute">{displayTotals.fa.toLocaleString()}</div>
+              <div className="px-3 py-2.5 text-right tabular-nums text-mute">{displayTotals.fa.toLocaleString()}</div>
             </div>
             <div className="grid grid-cols-[80px_1fr_140px_140px] bg-sage-700 text-white text-[13px] font-semibold">
               <div className="px-3 py-2.5 border-r border-white/20"></div>
               <div className="px-3 py-2.5 border-r border-white/20">Total Project Costs</div>
-              <div className="px-3 py-2.5 border-r border-white/20 text-right tabular-nums">{totals.total.toLocaleString()}</div>
-              <div className="px-3 py-2.5 text-right tabular-nums">{totals.total.toLocaleString()}</div>
+              <div className="px-3 py-2.5 border-r border-white/20 text-right tabular-nums">{displayTotals.total.toLocaleString()}</div>
+              <div className="px-3 py-2.5 text-right tabular-nums">{displayTotals.total.toLocaleString()}</div>
             </div>
           </div>
 
@@ -3040,7 +3170,16 @@ function NoaSubStage({ toast, noaUploaded, setNoaUploaded, setAwardsStep, rows }
     contact: 'Contact',
   }
   const groupOrder: ExtractedField['group'][] = ['award', 'period', 'budget', 'contact']
-  const [editingField, setEditingField] = useState<string | null>(null)
+  const [editingFields, setEditingFields] = useState<Set<string>>(new Set())
+  const isEditing = (label: string) => editingFields.has(label)
+  const toggleEditing = (label: string) => {
+    setEditingFields(prev => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
+  }
   function updateField(label: string, newValue: string) {
     setExtracted(extracted.map(f => f.label === label ? { ...f, value: newValue } : f))
   }
@@ -3119,7 +3258,7 @@ function NoaSubStage({ toast, noaUploaded, setNoaUploaded, setAwardsStep, rows }
           <div className="bg-card border border-bdLt rounded-lg overflow-hidden mt-5">
             <div className="px-5 py-3 border-b border-bdLt flex items-center justify-between">
               <h3 className="text-[13px] font-semibold">Extracted fields</h3>
-              <span className="text-[11px] text-mute">{extracted.length} fields · all sourced to NoA sections</span>
+              <span className="text-[11px] text-mute">{extracted.length} fields · All the Fields are auto filled from the Notice of Award Document</span>
             </div>
             <div className="p-5 space-y-5">
               {groupOrder.map(group => {
@@ -3129,28 +3268,53 @@ function NoaSubStage({ toast, noaUploaded, setNoaUploaded, setAwardsStep, rows }
                   <div key={group}>
                     <div className="text-[11px] text-purple-700 uppercase tracking-widest font-semibold mb-2.5">{groupTitles[group]}</div>
                     <div className="grid grid-cols-2 gap-x-6 gap-y-0 border border-bdLt rounded-md">
-                      {fields.map(f => (
-                        <div key={f.label} className="py-2 px-3 border-b border-bdLt last:border-b-0 [&:nth-last-child(2)]:border-b-0">
-                          <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-1">{f.label}</div>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 relative">
-                              <input
-                                value={f.value}
-                                onChange={e => updateField(f.label, e.target.value)}
-                                onFocus={() => setEditingField(f.label)}
-                                onBlur={() => setEditingField(null)}
-                                title="Click to edit"
-                                className={`w-full px-2.5 py-1.5 pr-7 text-[13px] font-semibold rounded border transition focus:outline-none focus:ring-2 focus:ring-sage-500/30 focus:border-sage-500 hover:border-sage-400 ${
-                                  editingField === f.label ? 'border-sage-500 bg-white' : 'border-bdLt bg-surf2/30'
-                                }`}
-                              />
-                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-sub pointer-events-none">✎</span>
+                      {fields.map(f => {
+                        const editing = isEditing(f.label)
+                        return (
+                          <div key={f.label} className="py-2 px-3 border-b border-bdLt last:border-b-0 [&:nth-last-child(2)]:border-b-0">
+                            <div className="text-[10px] text-sub uppercase tracking-widest font-semibold mb-1">{f.label}</div>
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 relative">
+                                <input
+                                  value={f.value}
+                                  onChange={e => updateField(f.label, e.target.value)}
+                                  readOnly={!editing}
+                                  className={`w-full px-2.5 py-1.5 pr-9 text-[13px] font-semibold rounded border transition focus:outline-none ${
+                                    editing
+                                      ? 'border-sage-500 bg-white focus:ring-2 focus:ring-sage-500/30'
+                                      : 'border-bdLt bg-surf2/30 cursor-default'
+                                  }`}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => toggleEditing(f.label)}
+                                  aria-label={editing ? `Save ${f.label}` : `Edit ${f.label}`}
+                                  title={editing ? 'Save' : 'Edit'}
+                                  className={`absolute right-1 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-6 h-6 rounded transition ${
+                                    editing
+                                      ? 'bg-sage-600 text-white hover:bg-sage-700'
+                                      : 'text-sage-700 hover:bg-sage-50'
+                                  }`}
+                                >
+                                  {editing ? (
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                                      <polyline points="17 21 17 13 7 13 7 21" />
+                                      <polyline points="7 3 7 8 15 8" />
+                                    </svg>
+                                  ) : (
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                      <path d="M12 20h9" />
+                                      <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                                    </svg>
+                                  )}
+                                </button>
+                              </div>
+                              <ConfidenceChip level={f.confidence} />
                             </div>
-                            <ConfidenceChip level={f.confidence} />
                           </div>
-                          <div className="mt-1"><SourceTag source={f.source} /></div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 )
@@ -3244,13 +3408,16 @@ function ReconcileSubStage({ go, toast, rows, setRows, setIssues, reconciliation
           <h2 className="text-[22px] font-semibold">Award Budget Mismatch</h2>
           <p className="text-[13px] text-mute mt-1">Compare the awarded total to your proposed budget. Acknowledge to switch the Worksheet into resolve-mismatch mode.</p>
         </div>
-        <AIDisclaimer />
-
         <div className="bg-amber-50 border border-amber-bd rounded-lg p-5 flex items-start gap-3">
           <span className="text-amber-700 text-[16px] leading-none mt-0.5">⚠</span>
-          <p className="text-[14px] text-amber-700 font-medium leading-relaxed">
-            The awarded total differs from your proposed budget. Review the discrepancies below before opening the Worksheet to resolve mismatches.
-          </p>
+          <div className="text-amber-700 leading-relaxed space-y-2">
+            <p className="text-[14px] font-medium">
+              The awarded total differs from your proposed budget. Review the discrepancies below before opening the Worksheet to resolve mismatches.
+            </p>
+            <p className="text-[12px]">
+              The system is partially integrated with AI for efficient workflow. While we strive for accuracy, we encourage users to verify important information.
+            </p>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -3698,7 +3865,7 @@ export function FilesScreen({ toast, noaUploaded, egc1Submitted }: Nav) {
 // =====================================================================
 
 export function BudgetsScreen(props: Nav) {
-  const { go, toast, openBudgetId, setOpenBudgetId, rows: wsRows, asrSubmitCount } = props
+  const { go, toast, openBudgetId, setOpenBudgetId, rows: wsRows, asrSubmitCount, savedBudgets } = props
   if (openBudgetId === 'B158116') return <BudgetDetailView {...props} />
 
   const piRow = wsRows.find(r => r.category === 'personnel' && r.label)
@@ -3711,9 +3878,18 @@ export function BudgetsScreen(props: Nav) {
     status: 'Active',
     total: totals.total > 0 ? `$${totals.total.toLocaleString()}` : '$267,006',
   }))
+  const savedEntries = savedBudgets.map(b => ({
+    id: b.id,
+    title: b.title,
+    sponsor: 'NIH',
+    pi: piRow?.label ?? 'Harry Potter',
+    status: 'Draft',
+    total: totals.total > 0 ? `$${totals.total.toLocaleString()}` : '—',
+  }))
 
   const rows = [
     { id: 'B158116', title: 'Eye Conditions Evaluation', sponsor: 'NIH',  pi: 'Harry Potter',    status: 'Active', total: `$${totalsOf(wsRows).total.toLocaleString()}` },
+    ...savedEntries,
     ...submittedEntries,
     { id: 'B161463', title: 'NASA Linking Lakes',        sponsor: 'NASA', pi: 'Faisal Hossain',  status: 'Closed', total: '$298,500' },
     { id: 'B167902', title: 'Glaucoma Cohort Study',     sponsor: 'NIH',  pi: 'Remus Lupin',     status: 'Draft',  total: '—' },
