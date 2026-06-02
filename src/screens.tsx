@@ -615,7 +615,7 @@ export function WorkspaceScreen(props: Nav & {
           )
         }
         idChip={reconciliationActive ? 'Post-award · resolving mismatch' : 'Pre-award draft'}
-        status={hasTarget ? `· target $${target.toLocaleString()}` : undefined}
+        status={hasTarget ? `· Awarded $${target.toLocaleString()}` : undefined}
         trailingChip={
           <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sage-50 text-[10px] text-sage-700 font-medium whitespace-nowrap">
             <span className="w-1.5 h-1.5 rounded-full bg-sage-500" /> Autosaved 12s ago
@@ -639,17 +639,17 @@ export function WorkspaceScreen(props: Nav & {
           )}
           {hasTarget && <>
             <div className="flex items-center gap-2 whitespace-nowrap">
-              <span className="text-mute">Target</span>
+              <span className="text-mute">Awarded</span>
               <span className="font-semibold text-sage-700">${target.toLocaleString()}</span>
             </div>
             <span className="text-sub">−</span>
             <div className="flex items-center gap-2 whitespace-nowrap">
-              <span className="text-mute">Sum</span>
+              <span className="text-mute">Proposed</span>
               <span className={`font-semibold ${delta === 0 ? 'text-sage-700' : 'text-red'}`}>${totals.total.toLocaleString()}</span>
             </div>
             <span className="text-sub">=</span>
             <div className="flex items-center gap-2 whitespace-nowrap">
-              <span className="text-mute">Delta</span>
+              <span className="text-mute">Mismatch</span>
               <span className={`font-semibold ${delta === 0 ? 'text-sage-700' : 'text-red'}`}>
                 {delta === 0 ? 'Balanced ✓' : delta > 0 ? `$${delta.toLocaleString()} ${reconciliationActive ? 'short' : 'remaining'}` : `$${Math.abs(delta).toLocaleString()} over`}
               </span>
@@ -721,7 +721,7 @@ export function WorkspaceScreen(props: Nav & {
           </div>
 
           {/* Column headers */}
-          <div className="bg-[#F0EFE0] border-b border-bdLt h-6 grid grid-cols-[40px_minmax(220px,1.4fr)_minmax(150px,1fr)_100px_60px_60px_100px_120px] text-[10px] text-mute font-medium">
+          <div className="bg-[#F0EFE0] border-b border-bdLt h-6 grid grid-cols-[40px_minmax(220px,1fr)_minmax(150px,1fr)_100px_60px_60px_100px_120px] text-[10px] text-mute font-medium">
             <div className="border-r border-bdLt flex items-center justify-center">A</div>
             <div className="px-2 border-r border-bdLt flex items-center">Description</div>
             <div className="px-2 border-r border-bdLt flex items-center">Role</div>
@@ -762,7 +762,7 @@ export function WorkspaceScreen(props: Nav & {
                           else if (r.category === 'personnel' && r.roleType) { setAddinOpen(true); setMismatchView(false) }
                           else if (r.id === 'fa' && hasIssue) { setAddinOpen(true); setMismatchView(true) }
                         }}
-                        className={`grid grid-cols-[40px_minmax(220px,1.4fr)_minmax(150px,1fr)_100px_60px_60px_100px_120px] border-b border-bdLt h-9 text-[12px] transition ${
+                        className={`grid grid-cols-[40px_minmax(220px,1fr)_minmax(150px,1fr)_100px_60px_60px_100px_120px] border-b border-bdLt h-9 text-[12px] transition ${
                           hasIssue ? 'bg-red-50/60'
                           : isSel ? 'bg-sage-50'
                           : (r.id === 'eq' && pdfOpen) ? 'bg-yellow-hi'
@@ -931,7 +931,7 @@ export function WorkspaceScreen(props: Nav & {
                     )
                   })}
                   {/* Section subtotal — same 8-col grid as header/body for exact alignment */}
-                  <div className="grid grid-cols-[40px_minmax(220px,1.4fr)_minmax(150px,1fr)_100px_60px_60px_100px_120px] border-b border-bdLt h-8 text-[11px] bg-sage-50/40">
+                  <div className="grid grid-cols-[40px_minmax(220px,1fr)_minmax(150px,1fr)_100px_60px_60px_100px_120px] border-b border-bdLt h-8 text-[11px] bg-sage-50/40">
                     <div className="border-r border-bdLt h-full flex items-center justify-center text-sage-700 font-semibold text-[10px]">{sectionLetter}</div>
                     <div className="px-2 border-r border-bdLt flex items-center text-sage-700 font-semibold uppercase tracking-widest text-[10px] truncate">
                       Subtotal · {section.title.split('.').slice(1).join('.').trim()}
@@ -3234,13 +3234,12 @@ function NoaSubStage({ toast, noaUploaded, setNoaUploaded, setAwardsStep, rows }
               </div>
               <div className="space-y-1.5 text-[11px] text-mute border-t border-bdLt pt-3">
                 <div className="flex justify-between"><span>Sponsor template</span><span className="text-ink">NIH NoA v13</span></div>
-                <div className="flex justify-between"><span>Fields detected</span><span className="text-ink">14 of 14</span></div>
                 <div className="flex justify-between"><span>Confidence</span><span className="text-sage-700 font-semibold">96% avg</span></div>
               </div>
             </div>
-            <div className="bg-amber-50 border border-amber-bd rounded-lg p-4">
-              <div className="text-[10px] text-amber-700 uppercase tracking-widest font-semibold mb-2">Quick diff vs Worksheet</div>
-              <div className="space-y-1.5 text-[12px]">
+            <div className="bg-amber-50 border border-amber-bd rounded-lg p-4 flex flex-col">
+              <div className="text-[13px] text-amber-700 uppercase tracking-widest font-semibold mb-3">Quick diff vs Worksheet</div>
+              <div className="flex-1 flex flex-col justify-between gap-2 text-[13px]">
                 <div className="flex justify-between"><span className="text-mute">Worksheet sum</span><span className="font-semibold tabular-nums">${workspaceSum.toLocaleString()}</span></div>
                 <div className="flex justify-between"><span className="text-mute">NoA Y1 awarded</span><span className="font-semibold text-sage-700 tabular-nums">${NOA_Y1.toLocaleString()}</span></div>
                 <div className="flex justify-between pt-1.5 border-t border-amber-bd">
@@ -3876,6 +3875,7 @@ export function BudgetsScreen(props: Nav) {
     sponsor: 'NIH',
     pi: piRow?.label ?? 'Harry Potter',
     status: 'Active',
+    yearPeriod: `2025 / Period ${i + 1}`,
     total: totals.total > 0 ? `$${totals.total.toLocaleString()}` : '$267,006',
   }))
   const savedEntries = savedBudgets.map(b => ({
@@ -3884,15 +3884,16 @@ export function BudgetsScreen(props: Nav) {
     sponsor: 'NIH',
     pi: piRow?.label ?? 'Harry Potter',
     status: 'Draft',
+    yearPeriod: '2025 / Period 1',
     total: totals.total > 0 ? `$${totals.total.toLocaleString()}` : '—',
   }))
 
   const rows = [
-    { id: 'B158116', title: 'Eye Conditions Evaluation', sponsor: 'NIH',  pi: 'Harry Potter',    status: 'Active', total: `$${totalsOf(wsRows).total.toLocaleString()}` },
+    { id: 'B158116', title: 'Eye Conditions Evaluation', sponsor: 'NIH',  pi: 'Harry Potter',    status: 'Active', yearPeriod: '2025 / Period 1', total: `$${totalsOf(wsRows).total.toLocaleString()}` },
     ...savedEntries,
     ...submittedEntries,
-    { id: 'B161463', title: 'NASA Linking Lakes',        sponsor: 'NASA', pi: 'Faisal Hossain',  status: 'Closed', total: '$298,500' },
-    { id: 'B167902', title: 'Glaucoma Cohort Study',     sponsor: 'NIH',  pi: 'Remus Lupin',     status: 'Draft',  total: '—' },
+    { id: 'B161463', title: 'NASA Linking Lakes',        sponsor: 'NASA', pi: 'Faisal Hossain',  status: 'Closed', yearPeriod: '2024 / Period 3', total: '$298,500' },
+    { id: 'B167902', title: 'Glaucoma Cohort Study',     sponsor: 'NIH',  pi: 'Remus Lupin',     status: 'Draft',  yearPeriod: '2025 / Period 1', total: '—' },
   ]
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-page">
@@ -3901,13 +3902,13 @@ export function BudgetsScreen(props: Nav) {
         <h2 className="text-[22px] font-semibold mb-1">Budgets</h2>
         <p className="text-[13px] text-mute mb-5">Click <b>B158116 Eye Conditions Evaluation</b> to open the budget summary auto-populated from Worksheet.</p>
         <div className="bg-card border border-bdLt rounded-lg overflow-hidden">
-          <div className="bg-surf2 border-b border-bdLt grid grid-cols-[100px_1.5fr_100px_1fr_100px_120px] px-5 py-3 text-[10px] text-sub uppercase tracking-widest font-semibold">
-            <span>ID</span><span>Title</span><span>Sponsor</span><span>PI</span><span>Status</span><span className="text-right">Total</span>
+          <div className="bg-surf2 border-b border-bdLt grid grid-cols-[90px_1.35fr_90px_1fr_90px_130px_110px] px-5 py-3 text-[10px] text-sub uppercase tracking-widest font-semibold">
+            <span>ID</span><span>Title</span><span>Sponsor</span><span>PI</span><span>Status</span><span>Year / Period</span><span className="text-right">Total</span>
           </div>
           {rows.map(r => (
             <div key={r.id}
               onClick={() => r.id === 'B158116' ? setOpenBudgetId(r.id) : toast(`${r.id} is read-only in this prototype.`)}
-              className={`grid grid-cols-[100px_1.5fr_100px_1fr_100px_120px] px-5 py-3 text-[12px] border-b border-bdLt last:border-b-0 items-center cursor-pointer transition ${
+              className={`grid grid-cols-[90px_1.35fr_90px_1fr_90px_130px_110px] px-5 py-3 text-[12px] border-b border-bdLt last:border-b-0 items-center cursor-pointer transition ${
                 r.id === 'B158116' ? 'hover:bg-sage-50' : 'hover:bg-surf2/40'
               }`}>
               <span className="font-mono text-sage-700">{r.id}</span>
@@ -3915,6 +3916,7 @@ export function BudgetsScreen(props: Nav) {
               <span>{r.sponsor}</span>
               <span>{r.pi}</span>
               <Pill tone={r.status === 'Active' ? 'sage' : r.status === 'Closed' ? 'gray' : 'purple'}>{r.status}</Pill>
+              <span className="text-mute whitespace-nowrap">{r.yearPeriod}</span>
               <span className="text-right font-semibold tabular-nums">{r.total}</span>
             </div>
           ))}
