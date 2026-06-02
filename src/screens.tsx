@@ -380,7 +380,7 @@ export function WorkspaceScreen(props: Nav & {
   const {
     go, goAwards, toast, aiOn,
     issues, setIssues, rows, setRows,
-    proposedTotal,
+    proposedTotal, setProposedTotal,
     reconciliationActive, egc1Submitted,
     captureUi, savedBudgets, addSavedBudget,
   } = props
