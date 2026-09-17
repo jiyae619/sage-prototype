@@ -1,0 +1,13 @@
+{
+  "recorded_at": "2026-09-17T20:21:47.673Z",
+  "commit": "6f8ef5d",
+  "note": "Errors the gate tolerates because they predate it. Lower these; never raise them.",
+  "total": 10,
+  "errors": {
+    "netlify/functions/mcp/index.ts::@typescript-eslint/no-unused-vars": 1,
+    "src/App.tsx::react-hooks/set-state-in-effect": 1,
+    "src/screens.tsx::react-refresh/only-export-components": 5,
+    "src/ui.tsx::react-hooks/set-state-in-effect": 1,
+    "src/ui.tsx::react-refresh/only-export-components": 2
+  }
+}
