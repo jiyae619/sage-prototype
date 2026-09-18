@@ -36,10 +36,15 @@ scripts/lib/codex.mjs             the only place a model is called
 scripts/lib/schemas.mjs           zod → JSON Schema for --output-schema
 scripts/lib/diff.mjs              what changed
 scripts/lib/report.mjs            .gate/report.md
-scripts/hooks/guard-gate-integrity.mjs   PreToolUse — protects the gate
+scripts/lib/guard.mjs             the PreToolUse decision (tested)
+scripts/lib/roles.mjs             loads a role brief from its skill
+scripts/hooks/guard-gate-integrity.mjs   PreToolUse — delivers that decision
 scripts/hooks/stop-gate.mjs              Stop — opt-in, GATE_STOP_HOOK=1
-agents/                           code-analysis, test-eval, test-author, repair
 skills/merge-gate/                how to run it
+skills/code-analysis/             role brief — the gate reads it, you can invoke it
+skills/test-eval/                 role brief
+skills/test-author/               role brief
+skills/repair/                    role brief (stage 1 uses it)
 eslint-baseline.json              errors that predate the gate
 ```
 
@@ -62,3 +67,38 @@ JSON Schema from it for `codex exec --output-schema`, then validates the respons
 against the same object. A drift between what is asked for and what is accepted
 is therefore not possible. A response that violates the schema is retried once
 and then reported as a degraded pass — never as an empty finding list.
+
+
+## Why Codex does not orchestrate the roles itself
+
+The obvious design is one Codex orchestrator that spawns a subagent per role and
+merges their findings. Codex has the pieces: `spawn_agent`, roles registered via
+`[agents.<name>]` with `description` + `config_file`, and a rule that permits
+spawning when "the user or applicable AGENTS.md/skill instructions explicitly
+ask" — which a skill can do.
+
+It does not work under `codex exec`, and it fails in the worst available way.
+
+Three probes, all with a role correctly registered and a prompt that explicitly
+authorised delegation. In every one, `codex exec --json` showed
+`collab_tool_call` with `receiver_thread_ids: []` — no child thread was ever
+created — and in every one **Codex reported an answer from the subagent
+anyway**. Asked to relay a sentinel token planted in the role's instruction
+file, it returned a fluent invented reply with no sentinel and no error. One run
+surfaced the underlying cause: `collab spawn failed: no thread with id
+<session>`. The multi-agent machinery wants the app-server/TUI path, not
+one-shot exec.
+
+A silent fabrication presented as a subagent's judgement is the one failure a
+review harness cannot absorb — it is the same shape as a smoke script that
+always exits 0, and it would have flowed straight into the verdict.
+
+So the script fans out instead: one `codex exec` per role, each schema
+constrained, each either returning valid JSON or being marked degraded. Same
+roles, same model doing the judging, no orchestrator in a position to invent a
+pass that never ran.
+
+If you later enable the app-server path, the check to add is already known:
+parse `codex exec --json` for `collab_tool_call` and require
+`receiver_thread_ids` to be non-empty. Do not accept the model's own account of
+whether it delegated.

@@ -26,13 +26,14 @@ import { failureSignature, runChecks } from './lib/checks.mjs'
 import { collectDiff } from './lib/diff.mjs'
 import { judge, repair } from './lib/codex.mjs'
 import { reconcileFindings, reconcileVerdict } from './lib/consensus.mjs'
+import { loadRoleBrief } from './lib/roles.mjs'
 import { renderReport } from './lib/report.mjs'
 
 // ---------------------------------------------------------------------------
 // Verdict policy. Deliberately in code and deliberately boring — if these
 // thresholds lived in a prompt, the model could argue its way past them.
 // ---------------------------------------------------------------------------
-const POLICY = {
+export const POLICY = {
   blockingSeverities: ['critical', 'high'],
   // Below this, a high-severity finding is reported but does not block. Models
   // hedge; a 0.3-confidence "possible race" should not stop a merge.
@@ -71,6 +72,7 @@ function parseArgs(argv) {
     else if (a === '--no-repair') args.repair = false
     else if (a === '--checks-only') args.judgment = false
     else if (a === '--json') args.json = true
+    else if (a === '--role') args.role = argv[++i]
     else if (a === '--help' || a === '-h') args.help = true
     else throw new Error(`unknown flag: ${a}`)
   }
@@ -105,17 +107,11 @@ async function repairLoop(initialResults, { maxRepair }) {
 
   for (let attempt = 1; attempt <= maxRepair; attempt++) {
     const prompt = [
-      'The repository check suite is failing. Fix the code so it passes.',
+      loadRoleBrief('repair'),
       '',
-      'Rules:',
-      '- Fix the cause. Do not weaken, skip, or delete a test to make it pass.',
-      '- Do not edit vitest.config.ts, eslint.config.js, tsconfig*.json, or',
-      '  .agents/plugins/plugins/review-harness/** — those define the gate itself.',
-      '- If a test encodes an intent you believe is wrong, stop and say so',
-      '  instead of changing the assertion.',
-      '- Make the smallest change that fixes it.',
+      '---',
       '',
-      'Failing checks:',
+      '## Failing checks',
       '',
       describeFailures(results),
     ].join('\n')
@@ -150,85 +146,44 @@ async function repairLoop(initialResults, { maxRepair }) {
 // Stage 2 — judgment. Both passes are read-only and independent, so they run
 // concurrently.
 // ---------------------------------------------------------------------------
-function codeAnalysisPrompt(diff, checks) {
+/**
+ * A judgment prompt is the role's own brief plus this run's material. The brief
+ * lives in skills/<role>/SKILL.md and nowhere else, so what the gate asks for
+ * and what a human invoking that skill asks for cannot drift apart.
+ */
+function judgmentPrompt(role, diff, checks) {
   return [
-    'You are reviewing a diff that is about to be merged in a React + TypeScript',
-    'repo that also hosts a public MCP server as a Netlify Function at /mcp.',
+    loadRoleBrief(role),
     '',
-    'Context that changes what matters here:',
-    '- netlify/functions/mcp/budget.ts is a hand-maintained COPY of the budget',
-    '  math and data in src/screens.tsx. Any change that makes them disagree is',
-    '  a correctness bug even if both sides are individually valid, because the',
-    '  UI and the agent-facing endpoint would then report different money.',
-    '- The MCP endpoint is public. Its only defence is a static bearer token',
-    '  read from MCP_BEARER_TOKEN, and it must fail closed when that is unset.',
-    '- These budget numbers go into real grant proposals. A wrong total is a',
-    '  worse outcome than a crash.',
+    '---',
     '',
-    'What kind of artifact this is, and why it matters for severity:',
-    'This is a working design prototype for a capstone, not a shipped product.',
-    'Some panels are chrome that was deliberately never wired — a control with',
-    'no props, local-only state, or a label describing a flow that does not',
-    'exist yet. Report those as category `prototype-fidelity`, at whatever',
-    'severity fits, and they will be shown without blocking the merge.',
+    '## This run',
     '',
-    'But do not use that category as a catch-all. If unwired UI causes the app',
-    'to display a DIFFERENT NUMBER than the MCP endpoint reports for the same',
-    'budget id, that is `data-integrity` or `correctness`, not fidelity — the',
-    'divergence is the defect regardless of why the wiring is missing.',
+    `Deterministic checks: ${checks.map(c => `${c.name}=${c.skipped ? 'skipped' : c.ok ? 'pass' : 'FAIL'}`).join(', ')}`,
     '',
-    'Report only defects you can state as a concrete failure: specific inputs or',
-    'state, and the wrong output or crash that follows. Do not report style,',
-    'naming, or "consider extracting". If the diff is clean, return an empty',
-    'findings array and verdict "approve" — a clean diff is a normal result.',
+    'You are running read-only and cannot execute the suite yourself. Take the',
+    'check results above as given rather than reporting that you could not',
+    'reproduce them, and ignore any `.gate/` output you find in the tree — it is',
+    'this gate\'s own scratch directory, not evidence about the code.',
     '',
-    `Deterministic checks currently: ${checks.map(c => `${c.name}=${c.ok ? 'pass' : 'FAIL'}`).join(', ')}`,
-    '',
-    `Files changed (${diff.files.length}):`,
+    `Files changed (${diff.files.length}) against \`${diff.base}\`:`,
     diff.files.map(f => `  ${f}`).join('\n'),
     '',
     diff.stat,
     '',
-    diff.truncated ? '(diff truncated — read the files directly for anything you need)' : '',
+    diff.truncated
+      ? '(diff truncated at the character budget — read files directly for anything you need)'
+      : '',
     '',
     '--- DIFF ---',
     diff.patch,
-  ].join('\n')
-}
-
-function testEvalPrompt(diff, checks) {
-  const testResult = checks.find(c => c.name === 'tests')
-  return [
-    'Judge whether this repo\'s test suite actually protects the diff below.',
-    '',
-    'The suite lives in tests/ and runs under vitest. You may read any file.',
-    '',
-    'You are looking for the gap between "the tests pass" and "a regression',
-    'would be caught". Specifically:',
-    '- For each behaviour the diff changes, is there a test that would FAIL if',
-    '  that behaviour silently broke? Name the test, or say nothing covers it.',
-    '- Which existing tests cannot fail — tautologies, assertions on mocks,',
-    '  snapshots of implementation detail, or assertions so loose that a wrong',
-    '  value still passes?',
-    '- What is missing that a reviewer of grant-budget software would insist on?',
-    '',
-    'Do not praise coverage counts. A suite of 30 passing tests that cannot',
-    'catch a wrong budget total is inadequate; say so.',
-    '',
-    `Suite status: ${testResult?.summary ?? 'unknown'}`,
-    '',
-    `Files changed (${diff.files.length}):`,
-    diff.files.map(f => `  ${f}`).join('\n'),
-    '',
-    '--- DIFF ---',
-    diff.patch,
-  ].join('\n')
+  ].filter(l => l !== null).join('\n')
 }
 
 // ---------------------------------------------------------------------------
 // Stage 3 — verdict, computed from data.
 // ---------------------------------------------------------------------------
-function computeVerdict({ checks, analysis, testEval }) {
+export function computeVerdict({ checks, analysis, testEval }) {
   const reasons = []
 
   const failedChecks = checks.filter(c => !c.ok)
@@ -278,6 +233,10 @@ async function main() {
   --no-repair         never edit; report only
   --checks-only       skip the model judgment passes
   --json              print the machine-readable result to stdout
+  --role <name>       run ONE judgment pass and print its JSON; no checks, no
+                      verdict, no exit-code gating. For asking a single
+                      question, e.g. --role test-eval --uncommitted.
+                      Roles: code-analysis, test-eval
 `)
     return 0
   }
@@ -297,6 +256,23 @@ async function main() {
   }
   if (diff.files.length === 0) {
     console.log(`No changes against ${args.base}. Nothing to gate.`)
+    return 0
+  }
+
+  if (args.role) {
+    // Deliberately skips stage 0 and stage 3. This mode answers "what does the
+    // <role> pass say", and must never be mistaken for a merge decision — so
+    // it writes no result.json and its exit code reflects only whether the
+    // pass ran.
+    process.stderr.write(`[single role] ${args.role} over ${diff.files.length} changed file(s)…\n`)
+    const pass = await judge(args.role, judgmentPrompt(args.role, diff, [
+      { name: 'checks', ok: true, skipped: true, summary: 'not run in --role mode' },
+    ]))
+    if (!pass.ok) {
+      console.error(`${args.role} did not complete: ${pass.error}`)
+      return 2
+    }
+    console.log(JSON.stringify(pass.data, null, 2))
     return 0
   }
 
@@ -322,10 +298,10 @@ async function main() {
     const runs = POLICY.codeAnalysisRuns
     process.stderr.write(`[stage 2] code-analysis x${runs} + test-eval…\n`)
 
-    const caPrompt = codeAnalysisPrompt(diff, checks)
+    const caPrompt = judgmentPrompt('code-analysis', diff, checks)
     const passes = await Promise.all([
       ...Array.from({ length: runs }, () => judge('code-analysis', caPrompt)),
-      judge('test-eval', testEvalPrompt(diff, checks)),
+      judge('test-eval', judgmentPrompt('test-eval', diff, checks)),
     ])
     const caPasses = passes.slice(0, runs)
     testEval = passes[runs]
@@ -372,10 +348,13 @@ async function main() {
   return verdict.blocked ? 1 : 0
 }
 
-main().then(
-  code => process.exit(code),
-  err => {
-    console.error(`review-gate crashed: ${err.stack ?? err.message}`)
-    process.exit(2)
-  },
-)
+// Only run as a CLI. Importing this module (the tests do) must not start a gate.
+if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+  main().then(
+    code => process.exit(code),
+    err => {
+      console.error(`review-gate crashed: ${err.stack ?? err.message}`)
+      process.exit(2)
+    },
+  )
+}

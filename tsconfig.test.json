@@ -6,6 +6,9 @@
     "module": "esnext",
     "types": ["node", "vitest/globals"],
     "skipLibCheck": true,
+    /* The gate is .mjs; tests import it. allowJs resolves those imports
+       without typechecking their bodies (checkJs stays off). */
+    "allowJs": true,
 
     /* Bundler mode */
     "moduleResolution": "bundler",
@@ -23,5 +26,5 @@
   },
   /* `netlify` was covered by no tsconfig before this, so `tsc -b` never
      typechecked the MCP server. It does now. */
-  "include": ["tests", "netlify", "vitest.config.ts"]
+  "include": ["tests", "netlify", "vitest.config.ts", ".agents/plugins/plugins/review-harness/scripts"]
 }

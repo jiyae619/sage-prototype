@@ -42,6 +42,10 @@ The report lists each blocking reason with its kind:
 
 Nothing else blocks. In particular:
 
+`--role` answers a single question and is never a merge decision: it skips the
+checks and the verdict and prints that pass's JSON. Do not report its output as
+"the gate passed".
+
 Runs are matched by the `root_cause_key` each finding carries — a slug naming
 the underlying defect rather than its location. Matching is by token overlap
 within a category, not exact string, because two runs reliably name the same
