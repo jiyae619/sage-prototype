@@ -1,4 +1,4 @@
-import type { WorkspaceRow } from './screens'
+import type { WorkspaceRow } from './budgetEngine'
 
 // Whether the worksheet has been populated (vs. the initial/reset blank state) —
 // mirrors the inline check already used at several call sites in screens.tsx.
