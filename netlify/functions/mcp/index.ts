@@ -12,7 +12,8 @@ import type { Config, Context } from '@netlify/functions'
 import { timingSafeEqual } from 'node:crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
-import { registerTools } from './tools'
+import { registerTools, type FetchLike } from './tools'
+import { blobsStore, type KVStore } from './store'
 
 const SERVER_INFO = { name: 'sage-mcp-server', version: '0.1.0' }
 
@@ -29,31 +30,39 @@ function checkAuth(req: Request): AuthResult {
   return given.length === want.length && timingSafeEqual(given, want) ? 'ok' : 'unauthorized'
 }
 
-export default async (req: Request, _context: Context): Promise<Response> => {
-  switch (checkAuth(req)) {
-    case 'unconfigured':
-      // Fail closed: never serve tools without a token configured.
-      console.error('MCP_BEARER_TOKEN is not set; refusing request')
-      return new Response('MCP endpoint not configured', { status: 503 })
-    case 'unauthorized':
-      return new Response('Unauthorized', { status: 401, headers: { 'WWW-Authenticate': 'Bearer' } })
-    case 'ok':
-      break
-  }
+// createHandler takes its store/fetch as an explicit dependency rather than
+// reaching for @netlify/blobs and global fetch directly, so tests can swap
+// in an in-memory store and a stub fetch — see ./store.ts. Production
+// (the default export below) always uses the real ones.
+export function createHandler(deps: { store?: KVStore; fetchImpl?: FetchLike } = {}) {
+  return async (req: Request, _context: Context): Promise<Response> => {
+    switch (checkAuth(req)) {
+      case 'unconfigured':
+        // Fail closed: never serve tools without a token configured.
+        console.error('MCP_BEARER_TOKEN is not set; refusing request')
+        return new Response('MCP endpoint not configured', { status: 503 })
+      case 'unauthorized':
+        return new Response('Unauthorized', { status: 401, headers: { 'WWW-Authenticate': 'Bearer' } })
+      case 'ok':
+        break
+    }
 
-  const server = new McpServer(SERVER_INFO)
-  registerTools(server)
+    const server = new McpServer(SERVER_INFO)
+    registerTools(server, { store: deps.store ?? blobsStore('sage-mcp'), fetchImpl: deps.fetchImpl })
 
-  const transport = new WebStandardStreamableHTTPServerTransport({
-    sessionIdGenerator: undefined, // stateless
-    enableJsonResponse: true,      // plain JSON replies, no SSE stream
-  })
-  await server.connect(transport)
-  try {
-    return await transport.handleRequest(req)
-  } finally {
-    await transport.close()
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: undefined, // stateless
+      enableJsonResponse: true,      // plain JSON replies, no SSE stream
+    })
+    await server.connect(transport)
+    try {
+      return await transport.handleRequest(req)
+    } finally {
+      await transport.close()
+    }
   }
 }
+
+export default createHandler()
 
 export const config: Config = { path: '/mcp' }
