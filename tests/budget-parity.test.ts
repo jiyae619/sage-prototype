@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { AI_PREFILL as uiRows, computeSubtotal as uiCompute } from '../src/screens'
+import { AI_PREFILL as uiRows, BLANK_ROWS, computeSubtotal as uiCompute } from '../src/screens'
+import { b158116Rows } from '../src/budgetRows'
 import {
   BUDGETS,
   computeSubtotal as mcpCompute,
@@ -138,5 +139,29 @@ describe('rollup parity', () => {
     const uiSubtotals = mcpRows.map(r => uiCompute(r as never, mcpRows as never))
     const uiTotal = uiSubtotals.reduce((a, b) => a + b, 0)
     expect(totalsOf(mcpRows).total).toBe(uiTotal)
+  })
+})
+
+describe('B158116 pricing: blank worksheet vs MCP', () => {
+  // Confirmed 2026-09-17 by the review harness (docs/reflection reference:
+  // "b158116-ui-prices-from-mutable-worksheet"): BudgetsScreen, BudgetDetailView
+  // and EGC1FormsScreen all priced B158116 from whatever the live, editable
+  // worksheet happened to hold. A blank worksheet showed $0 for B158116 while
+  // the MCP server (a separate, fixed fixture) kept returning its real total —
+  // the same budget id, two disagreeing numbers, which is the exact failure
+  // this system exists to prevent. b158116Rows() is the fix: it falls back to
+  // the canonical AI_PREFILL data — the same data the MCP server serves —
+  // whenever the worksheet hasn't been populated yet.
+  it('falls back to AI_PREFILL — and so to the MCP total — when the worksheet is blank', () => {
+    const priced = b158116Rows(BLANK_ROWS as never, uiRows as never)
+    expect(priced).toBe(uiRows)
+    expect(totalsOf(priced as never).total).toBe(totalsOf(mcpRows).total)
+  })
+
+  it('never overrides a genuinely populated worksheet', () => {
+    const edited: WorkspaceRow[] = [
+      { id: 'per1', cellRef: 'F4', category: 'personnel', label: 'A Different PI', role: '', monthlySalary: 1000, effortPct: 100, months: 1 },
+    ]
+    expect(b158116Rows(edited, uiRows as never)).toBe(edited)
   })
 })

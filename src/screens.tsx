@@ -7,6 +7,7 @@ import {
   SubTabs, HoverTip,
   type Issue, type TabKey, type AwardsStep,
 } from './ui'
+import { b158116Rows } from './budgetRows'
 
 export type { Issue } from './ui'
 
@@ -2806,7 +2807,10 @@ function StepCard({ n, status, statusLabel, title, desc }: {
 
 export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitted, savedBudgets }: Nav) {
   const isFilled = rows.some(r => r.label !== '' || r.amount || r.monthlySalary)
-  const totals = totalsOf(rows)
+  // B158116's own figures (not "linked saved budget" figures) must match the MCP
+  // server even when the live worksheet is blank — see b158116Rows.
+  const linkedRows = b158116Rows(rows, AI_PREFILL)
+  const totals = totalsOf(linkedRows)
   const allKnownBudgets = [
     { id: 'B158116', title: 'Eye Conditions Evaluation' },
     ...savedBudgets,
@@ -2822,11 +2826,11 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
 
   // Map workspace categories to FAS object codes. Only flow figures into the
   // eGC1 table when the chosen budget is the one tied to this workspace.
-  const personnelSum = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'personnel').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
-  const fringeSum    = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'fringe').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
-  const travelSum    = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'travel').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
-  const suppliesSum  = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'supplies' || r.category === 'equipment').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
-  const tuitionSum   = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'tuition').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
+  const personnelSum = budgetIsLinkedToWorkspace ? linkedRows.filter(r => r.category === 'personnel').reduce((s, r) => s + computeSubtotal(r, linkedRows), 0) : 0
+  const fringeSum    = budgetIsLinkedToWorkspace ? linkedRows.filter(r => r.category === 'fringe').reduce((s, r) => s + computeSubtotal(r, linkedRows), 0) : 0
+  const travelSum    = budgetIsLinkedToWorkspace ? linkedRows.filter(r => r.category === 'travel').reduce((s, r) => s + computeSubtotal(r, linkedRows), 0) : 0
+  const suppliesSum  = budgetIsLinkedToWorkspace ? linkedRows.filter(r => r.category === 'supplies' || r.category === 'equipment').reduce((s, r) => s + computeSubtotal(r, linkedRows), 0) : 0
+  const tuitionSum   = budgetIsLinkedToWorkspace ? linkedRows.filter(r => r.category === 'tuition').reduce((s, r) => s + computeSubtotal(r, linkedRows), 0) : 0
 
   const codes = [
     { code: '01', desc: 'Salaries and Wages',          period1: personnelSum },
@@ -3864,9 +3868,10 @@ export function FilesScreen({ toast, noaUploaded, egc1Submitted }: Nav) {
 // =====================================================================
 
 export function BudgetsScreen(props: Nav) {
-  const { go, toast, openBudgetId, setOpenBudgetId, rows: wsRows, asrSubmitCount, savedBudgets } = props
+  const { go, toast, openBudgetId, setOpenBudgetId, rows: rawRows, asrSubmitCount, savedBudgets } = props
   if (openBudgetId === 'B158116') return <BudgetDetailView {...props} />
 
+  const wsRows = b158116Rows(rawRows, AI_PREFILL)
   const piRow = wsRows.find(r => r.category === 'personnel' && r.label)
   const totals = totalsOf(wsRows)
   const submittedEntries = Array.from({ length: asrSubmitCount }, (_, i) => ({
@@ -3931,7 +3936,8 @@ export function BudgetsScreen(props: Nav) {
 
 // Budget detail — auto-populated from Worksheet rows (image #8 layout)
 function BudgetDetailView(props: Nav) {
-  const { go, toast, rows, setOpenBudgetId, reconciliationActive } = props
+  const { go, toast, rows: rawRows, setOpenBudgetId, reconciliationActive } = props
+  const rows = b158116Rows(rawRows, AI_PREFILL)
   const totals = totalsOf(rows)
   const [section, setSection] = useState<'summary'|'worksheet'>('summary')
 
