@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import handler, { createHandler } from '../netlify/functions/mcp/index'
-import { memoryStore } from '../netlify/functions/mcp/store'
+import { memoryStore, type KVStore } from '../netlify/functions/mcp/store'
 import type { FetchLike } from '../netlify/functions/mcp/tools'
 
 // WHY THIS FILE EXISTS
@@ -424,5 +424,70 @@ describe('sage_stage_salary_estimate', () => {
     const h = createHandler({ store: memoryStore() })
     const body = await callTool('sage_stage_salary_estimate', { ...goodReport, total: 19261.4 }, h)
     expect(body.result?.isError).toBeFalsy()
+  })
+})
+
+describe('audit log', () => {
+  // Plan §1.4: the platform's own ledger records only what an agent *asked*
+  // a tool, never what it returned — this durable, per-call record is what
+  // closes that gap, and Phase 4's ledger reconciliation depends on every
+  // call (not just the writes) actually landing here.
+
+  it('records a durable entry for a successful call, keyed under today', async () => {
+    const store = memoryStore()
+    const h = createHandler({ store })
+    await callTool('sage_get_budget', { budget_id: 'B158116' }, h)
+
+    const keys = await store.list('audit/')
+    expect(keys).toHaveLength(1)
+    const today = new Date().toISOString().slice(0, 10)
+    expect(keys[0]).toMatch(new RegExp(`^audit/${today}/`))
+
+    const record = await store.get(keys[0]) as Record<string, unknown>
+    expect(record).toMatchObject({
+      agentId: null, // no per-agent token yet — see ToolDeps.agentId
+      tool: 'sage_get_budget',
+      args: { budget_id: 'B158116' },
+      outcome: 'success',
+    })
+    expect(record.result).toMatchObject({ id: 'B158116' })
+    expect(record.durationMs as number).toBeGreaterThanOrEqual(0)
+    expect(new Date(record.at as string).toISOString()).toBe(record.at)
+  })
+
+  it('records outcome: "error" for a rejected call, not just successes', async () => {
+    const store = memoryStore()
+    const h = createHandler({ store })
+    await callTool('sage_get_budget', { budget_id: 'NOPE' }, h)
+
+    const keys = await store.list('audit/')
+    const record = await store.get(keys[0]) as Record<string, unknown>
+    expect(record).toMatchObject({ tool: 'sage_get_budget', outcome: 'error' })
+    expect(record.result).toEqual(expect.arrayContaining([expect.objectContaining({ text: expect.stringContaining('NOPE') })]))
+  })
+
+  it('gives every call its own record — two calls never collide on one key', async () => {
+    const store = memoryStore()
+    const h = createHandler({ store })
+    await callTool('sage_get_budget', { budget_id: 'B158116' }, h)
+    await callTool('sage_get_budget', { budget_id: 'B158116' }, h)
+
+    const keys = await store.list('audit/')
+    expect(keys).toHaveLength(2)
+    expect(new Set(keys).size).toBe(2) // distinct, not the same key twice
+  })
+
+  it('still returns the real tool result even when the audit write itself fails', async () => {
+    // The audit log is load-bearing (plan §1.4) but must never take down the
+    // tool it is watching — a Blobs hiccup should read as a logging gap, not
+    // an outage for sage_get_budget.
+    const failingStore: KVStore = {
+      ...memoryStore(),
+      async set() { throw new Error('blobs unavailable') },
+    }
+    const h = createHandler({ store: failingStore })
+    const body = await callTool('sage_get_budget', { budget_id: 'B158116' }, h)
+    expect(body.result?.isError).toBeFalsy()
+    expect(body.result?.structuredContent).toMatchObject({ id: 'B158116' })
   })
 })

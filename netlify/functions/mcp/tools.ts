@@ -16,6 +16,11 @@ export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 export interface ToolDeps {
   store: KVStore
   fetchImpl?: FetchLike
+  // Which agent's token made this call. Always null today — there is one
+  // shared bearer token for the whole server, not yet a per-agent one — so
+  // every audit record honestly says so. Wire this once Phase 1 item 4
+  // (policy.json, per-agent tokens) exists.
+  agentId?: string | null
 }
 
 // ---------------------------------------------------------------------
@@ -104,11 +109,62 @@ const SalaryEstimateSourceSchema = z.object({
 }).strict()
 
 // ---------------------------------------------------------------------
-// Audit trail: one JSON line per tool call, visible in Netlify function logs.
+// Audit trail: one durable record per tool call (plan §1.4 — the platform's
+// own ledger records only what the agent *asked* a tool, never what it
+// returned, so this server's audit log is what closes that gap). Stored in
+// Blobs at "audit/<day>/<callId>" — one object per call, keyed by day, so
+// Phase 4's ledger reconciliation can list a day's calls without scanning
+// everything ever recorded. Also still console.logged for live tailing.
 // ---------------------------------------------------------------------
 
-function audit(tool: string, args: unknown): void {
-  console.log(JSON.stringify({ at: new Date().toISOString(), tool, args }))
+type ToolOutcome = 'success' | 'error'
+
+function auditableResult(output: unknown): unknown {
+  if (output && typeof output === 'object') {
+    if ('structuredContent' in output) return (output as { structuredContent: unknown }).structuredContent
+    if ('content' in output) return (output as { content: unknown }).content
+  }
+  return output
+}
+
+async function auditedCall<T>(
+  store: KVStore,
+  agentId: string | null,
+  tool: string,
+  args: unknown,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const startedAt = new Date()
+  const start = performance.now()
+  let outcome: ToolOutcome = 'success'
+  let auditedOutput: unknown
+  try {
+    const output = await fn()
+    auditedOutput = auditableResult(output)
+    if (output && typeof output === 'object' && (output as { isError?: boolean }).isError) {
+      outcome = 'error'
+    }
+    return output
+  } catch (err) {
+    outcome = 'error'
+    auditedOutput = { thrown: err instanceof Error ? err.message : String(err) }
+    throw err
+  } finally {
+    const durationMs = Math.round(performance.now() - start)
+    const record = { at: startedAt.toISOString(), agentId, tool, args, result: auditedOutput, outcome, durationMs }
+    console.log(JSON.stringify(record))
+    try {
+      const day = startedAt.toISOString().slice(0, 10)
+      await store.set(`audit/${day}/${randomUUID()}`, record)
+    } catch (auditErr) {
+      // Load-bearing per plan §1.4, but a Blobs hiccup must never turn into an
+      // outage for the tool it's watching — surface it loudly instead.
+      console.error(JSON.stringify({
+        at: new Date().toISOString(), tool: 'audit-write', outcome: 'error',
+        error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+      }))
+    }
+  }
 }
 
 function result<T extends Record<string, unknown>>(output: T) {
@@ -138,6 +194,7 @@ function sha256(text: string): string {
 export function registerTools(server: McpServer, deps: ToolDeps): void {
   const fetchImpl: FetchLike = deps.fetchImpl ?? fetch
   const { store } = deps
+  const agentId = deps.agentId ?? null
 
   server.registerTool(
     'sage_get_budget',
@@ -164,8 +221,7 @@ Read-only. Does not modify anything. Use sage_compute_totals to price a hypothet
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async ({ budget_id }) => {
-      audit('sage_get_budget', { budget_id })
+    async ({ budget_id }) => auditedCall(store, agentId, 'sage_get_budget', { budget_id }, async () => {
       const budget = BUDGETS[budget_id]
       if (!budget) {
         return toolError(`Error: unknown budget_id '${budget_id}'. Known ids: ${Object.keys(BUDGETS).join(', ')}`)
@@ -179,7 +235,7 @@ Read-only. Does not modify anything. Use sage_compute_totals to price a hypothet
         delta: budget.noaTotal - totals.total,
         rows: budget.rows,
       })
-    },
+    }),
   )
 
   server.registerTool(
@@ -205,14 +261,16 @@ Returns per-row subtotals (same order as input) and the totals.`,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async ({ rows }) => {
-      audit('sage_compute_totals', { row_count: rows.length, row_ids: rows.map(r => r.id) })
-      const t = totalsOf(rows)
-      return result({
-        subtotals: rows.map((r, i) => ({ id: r.id, category: r.category, subtotal: t.subtotals[i] })),
-        totals: { directCosts: t.directCosts, fa: t.fa, mtdcBase: t.mtdcBase, total: t.total },
-      })
-    },
+    async ({ rows }) => auditedCall(
+      store, agentId, 'sage_compute_totals', { row_count: rows.length, row_ids: rows.map(r => r.id) },
+      async () => {
+        const t = totalsOf(rows)
+        return result({
+          subtotals: rows.map((r, i) => ({ id: r.id, category: r.category, subtotal: t.subtotals[i] })),
+          totals: { directCosts: t.directCosts, fa: t.fa, mtdcBase: t.mtdcBase, total: t.total },
+        })
+      },
+    ),
   )
 
   server.registerTool(
@@ -249,28 +307,30 @@ This is a prototype fixture mirroring the two rows the rest of SAGE demonstrates
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async ({ role, schedule, level, dept_group, fiscal_year }) => {
-      audit('sage_get_rates', { role, schedule, level, dept_group, fiscal_year })
-      const entry = lookupRate(role as RateRole, schedule)
-      if (!entry) {
-        return toolError(
-          `Error: no rate for role '${role}', schedule ${schedule}. Known (role, schedule) pairs: ${knownRateKeys().join(', ')}`,
-        )
-      }
-      return result({
-        role,
-        schedule,
-        monthly_salary: entry.monthlySalary,
-        fringe_rate: entry.fringeRate,
-        tuition_per_quarter: entry.tuitionPerQuarter,
-        source: {
-          title: entry.source.title,
-          url: entry.source.url,
-          effective_date: entry.source.effectiveDate,
-        },
-        table_version: entry.tableVersion,
-      })
-    },
+    async ({ role, schedule, level, dept_group, fiscal_year }) => auditedCall(
+      store, agentId, 'sage_get_rates', { role, schedule, level, dept_group, fiscal_year },
+      async () => {
+        const entry = lookupRate(role as RateRole, schedule)
+        if (!entry) {
+          return toolError(
+            `Error: no rate for role '${role}', schedule ${schedule}. Known (role, schedule) pairs: ${knownRateKeys().join(', ')}`,
+          )
+        }
+        return result({
+          role,
+          schedule,
+          monthly_salary: entry.monthlySalary,
+          fringe_rate: entry.fringeRate,
+          tuition_per_quarter: entry.tuitionPerQuarter,
+          source: {
+            title: entry.source.title,
+            url: entry.source.url,
+            effective_date: entry.source.effectiveDate,
+          },
+          table_version: entry.tableVersion,
+        })
+      },
+    ),
   )
 
   server.registerTool(
@@ -301,39 +361,41 @@ changed is null on the very first check of a source (nothing to compare against 
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ source_ids }) => {
-      audit('sage_check_rate_sources', { source_ids: source_ids ?? 'all' })
-      const targets = source_ids?.length
-        ? RATE_SOURCES.filter(s => source_ids.includes(s.id))
-        : RATE_SOURCES
+    async ({ source_ids }) => auditedCall(
+      store, agentId, 'sage_check_rate_sources', { source_ids: source_ids ?? 'all' },
+      async () => {
+        const targets = source_ids?.length
+          ? RATE_SOURCES.filter(s => source_ids.includes(s.id))
+          : RATE_SOURCES
 
-      if (source_ids?.length && targets.length !== source_ids.length) {
-        const known = RATE_SOURCES.map(s => s.id)
-        const unknown = source_ids.filter(id => !known.includes(id as typeof known[number]))
-        return toolError(`Error: unknown source_id(s): ${unknown.join(', ')}. Known ids: ${known.join(', ')}`)
-      }
-
-      const sources = await Promise.all(targets.map(async source => {
-        const checkedAt = new Date().toISOString()
-        const hashKey = `rate-source-hash:${source.id}`
-        try {
-          const res = await fetchImpl(source.url, { signal: AbortSignal.timeout(8000) })
-          if (!res.ok) {
-            return { ...source, changed: null, hash: null, checked_at: checkedAt, error: `HTTP ${res.status}` }
-          }
-          const body = await res.text()
-          const hash = sha256(body)
-          const previous = await store.get(hashKey) as string | null
-          await store.set(hashKey, hash)
-          return { ...source, changed: previous === null ? null : previous !== hash, hash, checked_at: checkedAt }
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err)
-          return { ...source, changed: null, hash: null, checked_at: checkedAt, error: message }
+        if (source_ids?.length && targets.length !== source_ids.length) {
+          const known = RATE_SOURCES.map(s => s.id)
+          const unknown = source_ids.filter(id => !known.includes(id as typeof known[number]))
+          return toolError(`Error: unknown source_id(s): ${unknown.join(', ')}. Known ids: ${known.join(', ')}`)
         }
-      }))
 
-      return result({ sources })
-    },
+        const sources = await Promise.all(targets.map(async source => {
+          const checkedAt = new Date().toISOString()
+          const hashKey = `rate-source-hash:${source.id}`
+          try {
+            const res = await fetchImpl(source.url, { signal: AbortSignal.timeout(8000) })
+            if (!res.ok) {
+              return { ...source, changed: null, hash: null, checked_at: checkedAt, error: `HTTP ${res.status}` }
+            }
+            const body = await res.text()
+            const hash = sha256(body)
+            const previous = await store.get(hashKey) as string | null
+            await store.set(hashKey, hash)
+            return { ...source, changed: previous === null ? null : previous !== hash, hash, checked_at: checkedAt }
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err)
+            return { ...source, changed: null, hash: null, checked_at: checkedAt, error: message }
+          }
+        }))
+
+        return result({ sources })
+      },
+    ),
   )
 
   server.registerTool(
@@ -362,16 +424,18 @@ Args:
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
-    async ({ role, schedule, monthly_salary, fringe_rate, tuition_per_quarter, source }) => {
-      audit('sage_stage_rates', { role, schedule })
-      const stagedRateId = randomUUID()
-      await store.set(`staged-rate:${stagedRateId}`, {
-        role, schedule, monthlySalary: monthly_salary, fringeRate: fringe_rate,
-        tuitionPerQuarter: tuition_per_quarter, source, status: 'pending_review',
-        stagedAt: new Date().toISOString(),
-      })
-      return result({ staged_rate_id: stagedRateId, status: 'pending_review' as const })
-    },
+    async ({ role, schedule, monthly_salary, fringe_rate, tuition_per_quarter, source }) => auditedCall(
+      store, agentId, 'sage_stage_rates', { role, schedule },
+      async () => {
+        const stagedRateId = randomUUID()
+        await store.set(`staged-rate:${stagedRateId}`, {
+          role, schedule, monthlySalary: monthly_salary, fringeRate: fringe_rate,
+          tuitionPerQuarter: tuition_per_quarter, source, status: 'pending_review',
+          stagedAt: new Date().toISOString(),
+        })
+        return result({ staged_rate_id: stagedRateId, status: 'pending_review' as const })
+      },
+    ),
   )
 
   server.registerTool(
@@ -407,49 +471,51 @@ On success the estimate is staged (not applied to any budget) and returned with 
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
-    async (report) => {
-      audit('sage_stage_salary_estimate', { budgetId: report.budgetId, rowId: report.rowId, total: report.total })
+    async (report) => auditedCall(
+      store, agentId, 'sage_stage_salary_estimate',
+      { budgetId: report.budgetId, rowId: report.rowId, total: report.total },
+      async () => {
+        // Recompute independently through the same shared engine sage_compute_totals
+        // uses — proof, not agreement (plan §6.4). Units are WorkspaceRow's own
+        // 0-100 percent convention; see SalaryInputsSchema's comment above.
+        const personnelRow: WorkspaceRow = {
+          id: report.rowId, cellRef: '', category: 'personnel', label: '', role: '',
+          monthlySalary: report.inputs.monthlySalary,
+          inflationRate: report.inputs.inflation,
+          effortPct: report.inputs.effortPct,
+          months: report.inputs.months,
+        }
+        const fringeRow: WorkspaceRow = {
+          id: `${report.rowId}-fringe`, cellRef: '', category: 'fringe', label: '', role: '',
+          fringeRate: report.inputs.fringeRate,
+        }
+        const allRows = [personnelRow, fringeRow]
+        const verifiedSalary = computeSubtotal(personnelRow, allRows)
+        const verifiedFringe = computeSubtotal(fringeRow, allRows)
+        const verifiedTotal = verifiedSalary + verifiedFringe
 
-      // Recompute independently through the same shared engine sage_compute_totals
-      // uses — proof, not agreement (plan §6.4). Units are WorkspaceRow's own
-      // 0-100 percent convention; see SalaryInputsSchema's comment above.
-      const personnelRow: WorkspaceRow = {
-        id: report.rowId, cellRef: '', category: 'personnel', label: '', role: '',
-        monthlySalary: report.inputs.monthlySalary,
-        inflationRate: report.inputs.inflation,
-        effortPct: report.inputs.effortPct,
-        months: report.inputs.months,
-      }
-      const fringeRow: WorkspaceRow = {
-        id: `${report.rowId}-fringe`, cellRef: '', category: 'fringe', label: '', role: '',
-        fringeRate: report.inputs.fringeRate,
-      }
-      const allRows = [personnelRow, fringeRow]
-      const verifiedSalary = computeSubtotal(personnelRow, allRows)
-      const verifiedFringe = computeSubtotal(fringeRow, allRows)
-      const verifiedTotal = verifiedSalary + verifiedFringe
+        if (Math.abs(report.total - verifiedTotal) > 0.5) {
+          return toolError(
+            `Error: reported total ${report.total} does not match the recomputed total ${verifiedTotal} `
+            + `(salary ${verifiedSalary} + fringe ${verifiedFringe}) for inputs ${JSON.stringify(report.inputs)}. `
+            + `Nothing was staged.`,
+          )
+        }
 
-      if (Math.abs(report.total - verifiedTotal) > 0.5) {
-        return toolError(
-          `Error: reported total ${report.total} does not match the recomputed total ${verifiedTotal} `
-          + `(salary ${verifiedSalary} + fringe ${verifiedFringe}) for inputs ${JSON.stringify(report.inputs)}. `
-          + `Nothing was staged.`,
-        )
-      }
+        const estimateId = randomUUID()
+        await store.set(`staged-estimate:${estimateId}`, {
+          ...report, verifiedSalary, verifiedFringe, verifiedTotal,
+          status: 'staged', stagedAt: new Date().toISOString(),
+        })
 
-      const estimateId = randomUUID()
-      await store.set(`staged-estimate:${estimateId}`, {
-        ...report, verifiedSalary, verifiedFringe, verifiedTotal,
-        status: 'staged', stagedAt: new Date().toISOString(),
-      })
-
-      return result({
-        estimate_id: estimateId,
-        status: 'staged' as const,
-        verified_salary: verifiedSalary,
-        verified_fringe: verifiedFringe,
-        verified_total: verifiedTotal,
-      })
-    },
+        return result({
+          estimate_id: estimateId,
+          status: 'staged' as const,
+          verified_salary: verifiedSalary,
+          verified_fringe: verifiedFringe,
+          verified_total: verifiedTotal,
+        })
+      },
+    ),
   )
 }
