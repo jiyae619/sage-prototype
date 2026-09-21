@@ -66,4 +66,19 @@ describe('B158116 pricing: blank worksheet vs MCP', () => {
     ]
     expect(b158116Rows(edited, uiRows as never)).toBe(edited)
   })
+
+  it('still falls back when a row has a label but no dollar amount yet', () => {
+    // Found by the merge gate (2026-09-21, confirmed 2/2): screens.tsx's
+    // confirmUpload() sets the equipment row's label/role from OCR before
+    // its amount arrives (see BudgetDetailView's upload flow). A worksheet
+    // in exactly that in-between state — one label set, every amount still
+    // zero — must still be treated as unpopulated, or B158116 prices near
+    // $0 while /mcp keeps returning the canonical $201,483.
+    const partiallyTouched = BLANK_ROWS.map(r =>
+      r.id === 'eq' ? { ...r, label: 'OCT Imaging Module', role: 'Heidelberg SPECTRALIS' } : r,
+    )
+    const priced = b158116Rows(partiallyTouched as never, uiRows as never)
+    expect(priced).toBe(uiRows)
+    expect(totalsOf(priced as never).total).toBe(totalsOf(mcpRows).total)
+  })
 })
