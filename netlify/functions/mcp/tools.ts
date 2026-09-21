@@ -442,11 +442,11 @@ Args:
     'sage_stage_salary_estimate',
     {
       title: 'Stage a verified salary estimate',
-      description: `Stage a salary + fringe estimate for one worksheet row, after independently recomputing it from your reported inputs — reject if your total disagrees with the recomputed total by more than $0.50.
+      description: `Stage a salary + fringe estimate for one worksheet row, after independently recomputing it from your reported inputs — reject if salary, fringe, or total disagrees with the recomputed value by more than $0.50, or if period.months disagrees with inputs.months.
 
-This is the last step of the salary-estimate flow: sage_get_rates for the number, policy sources for any sponsor rule, write the formula, then report through this tool. Never state a total you did not compute, and never call this with a number sage_compute_totals / the formula would not reproduce — this tool checks that for you and rejects the call if it does not match.
+This is the last step of the salary-estimate flow: sage_get_rates for the number, policy sources for any sponsor rule, write the formula, then report through this tool. Never state a number you did not compute, and never call this with figures sage_compute_totals / the formula would not reproduce — this tool checks every one of salary, fringe, and total independently (not just whether they happen to sum correctly) and rejects the call if any disagree.
 
-On success the estimate is staged (not applied to any budget) and returned with an estimate_id for later retrieval. On rejection nothing is staged; the error names both totals.`,
+On success the estimate is staged (not applied to any budget) and returned with an estimate_id for later retrieval. On rejection nothing is staged; the error names every field that mismatched, with both its reported and recomputed value.`,
       inputSchema: {
         budgetId: z.string().min(1),
         rowId: z.string().min(1),
@@ -475,6 +475,17 @@ On success the estimate is staged (not applied to any budget) and returned with 
       store, agentId, 'sage_stage_salary_estimate',
       { budgetId: report.budgetId, rowId: report.rowId, total: report.total },
       async () => {
+        // period.months is the human-readable period; inputs.months is what
+        // actually drives the formula. They must agree, or a report could
+        // describe a 12-month period while pricing 9 — caught here before
+        // any arithmetic runs, not left for the total check to maybe catch.
+        if (report.period.months !== report.inputs.months) {
+          return toolError(
+            `Error: period.months (${report.period.months}) does not match inputs.months `
+            + `(${report.inputs.months}). Nothing was staged.`,
+          )
+        }
+
         // Recompute independently through the same shared engine sage_compute_totals
         // uses — proof, not agreement (plan §6.4). Units are WorkspaceRow's own
         // 0-100 percent convention; see SalaryInputsSchema's comment above.
@@ -494,11 +505,21 @@ On success the estimate is staged (not applied to any budget) and returned with 
         const verifiedFringe = computeSubtotal(fringeRow, allRows)
         const verifiedTotal = verifiedSalary + verifiedFringe
 
-        if (Math.abs(report.total - verifiedTotal) > 0.5) {
+        // Check salary and fringe individually, not just their sum — two
+        // wrong components can net out to a total that happens to match
+        // (e.g. salary overstated, fringe understated by the same amount),
+        // which the old total-only check would have waved through.
+        const mismatches = [
+          ['salary', report.salary, verifiedSalary],
+          ['fringe', report.fringe, verifiedFringe],
+          ['total', report.total, verifiedTotal],
+        ].filter(([, reported, verified]) => Math.abs((reported as number) - (verified as number)) > 0.5)
+
+        if (mismatches.length > 0) {
+          const detail = mismatches.map(([field, reported, verified]) => `${field}: reported ${reported}, recomputed ${verified}`).join('; ')
           return toolError(
-            `Error: reported total ${report.total} does not match the recomputed total ${verifiedTotal} `
-            + `(salary ${verifiedSalary} + fringe ${verifiedFringe}) for inputs ${JSON.stringify(report.inputs)}. `
-            + `Nothing was staged.`,
+            `Error: reported figures do not match the recomputed values (${detail}) `
+            + `for inputs ${JSON.stringify(report.inputs)}. Nothing was staged.`,
           )
         }
 

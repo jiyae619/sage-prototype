@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import handler, { createHandler } from '../netlify/functions/mcp/index'
 import { memoryStore, type KVStore } from '../netlify/functions/mcp/store'
 import type { FetchLike } from '../netlify/functions/mcp/tools'
+import { RATE_SOURCES } from '../netlify/functions/mcp/rates'
 
 // WHY THIS FILE EXISTS
 //
@@ -288,6 +289,13 @@ describe('sage_get_rates', () => {
     expect(body.result?.isError).toBe(true)
     expect(body.result?.content[0].text).toContain('Grad-PhD:1')
   })
+
+  it('keeps the text block and structuredContent in agreement', async () => {
+    const body = await callTool('sage_get_rates', {
+      role: 'Grad-PhD', schedule: 1, level: 'Candidate', dept_group: 'g2', fiscal_year: 'FY26',
+    })
+    expect(JSON.parse(body.result!.content[0].text)).toEqual(body.result!.structuredContent)
+  })
 })
 
 describe('sage_check_rate_sources', () => {
@@ -341,11 +349,28 @@ describe('sage_check_rate_sources', () => {
     expect(wa?.error).toBeUndefined()
   })
 
-  it('checks all registered sources when source_ids is omitted', async () => {
-    const h = createHandler({ store: memoryStore(), fetchImpl: stubFetchAll('<html>x</html>') })
+  it('checks exactly the registered sources when source_ids is omitted, each fetched once', async () => {
+    const requestedUrls: string[] = []
+    const h = createHandler({
+      store: memoryStore(),
+      fetchImpl: async (url) => { requestedUrls.push(String(url)); return new Response('<html>x</html>', { status: 200 }) },
+    })
     const body = await callTool('sage_check_rate_sources', {}, h)
     const sources = body.result?.structuredContent?.sources as Array<Record<string, unknown>>
-    expect(sources.length).toBeGreaterThanOrEqual(8)
+
+    // Length alone would still pass if the registry grew, shrank by one and
+    // duplicated another, or substituted a different id — assert the exact set.
+    expect(sources.map(s => s.id).sort()).toEqual(RATE_SOURCES.map(s => s.id).sort())
+    expect(requestedUrls.sort()).toEqual(RATE_SOURCES.map(s => s.url).sort())
+    expect(requestedUrls).toHaveLength(RATE_SOURCES.length) // each fetched exactly once
+  })
+
+  it('reports HTTP failures on a source without crashing, distinct from a network throw', async () => {
+    const fetchImpl: FetchLike = async () => new Response('not found', { status: 404 })
+    const h = createHandler({ store: memoryStore(), fetchImpl })
+    const body = await callTool('sage_check_rate_sources', { source_ids: ['nih-cap-rule'] }, h)
+    const sources = body.result?.structuredContent?.sources as Array<Record<string, unknown>>
+    expect(sources[0]).toMatchObject({ id: 'nih-cap-rule', changed: null, hash: null, error: 'HTTP 404' })
   })
 
   it('is a tool error for an unknown source_id', async () => {
@@ -353,25 +378,55 @@ describe('sage_check_rate_sources', () => {
     const body = await callTool('sage_check_rate_sources', { source_ids: ['not-a-real-source'] }, h)
     expect(body.result?.isError).toBe(true)
   })
+
+  it('keeps the text block and structuredContent in agreement', async () => {
+    const h = createHandler({ store: memoryStore(), fetchImpl: stubFetchAll('<html>x</html>') })
+    const body = await callTool('sage_check_rate_sources', { source_ids: ['nih-cap-rule'] }, h)
+    expect(JSON.parse(body.result!.content[0].text)).toEqual(body.result!.structuredContent)
+  })
 })
 
 describe('sage_stage_rates', () => {
-  it('stages a proposed rate without touching the approved table', async () => {
-    const h = createHandler({ store: memoryStore() })
-    const body = await callTool('sage_stage_rates', {
-      role: 'Grad-PhD', schedule: 1,
+  it('durably stages a proposed rate, unread by the approved table', async () => {
+    const store = memoryStore()
+    const h = createHandler({ store })
+    const proposal = {
+      role: 'Grad-PhD' as const, schedule: 1,
       monthly_salary: 3700, fringe_rate: 23.0, tuition_per_quarter: 7400,
       source: { title: 'Updated UW RA schedule', url: 'https://example.edu/rates', effective_date: '2026-09-01' },
-    }, h)
+    }
+    const body = await callTool('sage_stage_rates', proposal, h)
     expect(body.result?.isError).toBeFalsy()
     expect(body.result?.structuredContent).toMatchObject({ status: 'pending_review' })
-    expect(body.result?.structuredContent?.staged_rate_id).toEqual(expect.any(String))
+    const stagedId = body.result?.structuredContent?.staged_rate_id as string
+    expect(stagedId).toEqual(expect.any(String))
+
+    // Read the store back directly — a version that returns an id without
+    // ever writing it would still pass on response shape alone.
+    const stored = await store.get(`staged-rate:${stagedId}`) as Record<string, unknown>
+    expect(stored).toMatchObject({
+      role: proposal.role, schedule: proposal.schedule,
+      monthlySalary: proposal.monthly_salary, fringeRate: proposal.fringe_rate,
+      tuitionPerQuarter: proposal.tuition_per_quarter, source: proposal.source,
+      status: 'pending_review',
+    })
+    expect(stored.stagedAt).toEqual(expect.any(String))
 
     // The approved table is a separate read path and must be unaffected.
     const rate = await callTool('sage_get_rates', {
       role: 'Grad-PhD', schedule: 1, level: 'Candidate', dept_group: 'g2', fiscal_year: 'FY26',
     }, h)
     expect(rate.result?.structuredContent).toMatchObject({ monthly_salary: 3621 })
+  })
+
+  it('keeps the text block and structuredContent in agreement', async () => {
+    const h = createHandler({ store: memoryStore() })
+    const body = await callTool('sage_stage_rates', {
+      role: 'Grad-Master', schedule: 1,
+      monthly_salary: 3300, fringe_rate: 23.0, tuition_per_quarter: 7400,
+      source: { title: 'x', url: 'https://example.edu/rates', effective_date: '2026-09-01' },
+    }, h)
+    expect(JSON.parse(body.result!.content[0].text)).toEqual(body.result!.structuredContent)
   })
 })
 
@@ -396,7 +451,7 @@ describe('sage_stage_salary_estimate', () => {
     notes: '',
   }
 
-  it('stages an estimate whose total the shared formula engine reproduces', async () => {
+  it('stages an estimate — durably — whose total the shared formula engine reproduces', async () => {
     const store = memoryStore()
     const h = createHandler({ store })
     const body = await callTool('sage_stage_salary_estimate', goodReport, h)
@@ -404,7 +459,18 @@ describe('sage_stage_salary_estimate', () => {
     expect(body.result?.structuredContent).toMatchObject({
       status: 'staged', verified_salary: 16295, verified_fringe: 2966, verified_total: 19261,
     })
-    expect(body.result?.structuredContent?.estimate_id).toEqual(expect.any(String))
+    const estimateId = body.result?.structuredContent?.estimate_id as string
+    expect(estimateId).toEqual(expect.any(String))
+
+    // Read the store back directly — a version that returns an id without
+    // ever writing it would still pass on response shape alone.
+    const stored = await store.get(`staged-estimate:${estimateId}`) as Record<string, unknown>
+    expect(stored).toMatchObject({
+      budgetId: goodReport.budgetId, rowId: goodReport.rowId,
+      verifiedSalary: 16295, verifiedFringe: 2966, verifiedTotal: 19261,
+      status: 'staged',
+    })
+    expect(stored.stagedAt).toEqual(expect.any(String))
   })
 
   it('rejects — and stages nothing — when the reported total disagrees with the recomputed total', async () => {
@@ -418,12 +484,67 @@ describe('sage_stage_salary_estimate', () => {
     expect(body.result?.content[0].text).toContain('19999')
     expect(body.result?.content[0].text).toContain('19261')
     expect(body.result?.structuredContent).toBeUndefined()
+
+    // "Nothing was staged" is a claim about the store, not just the response —
+    // a version that writes the record before returning the tool error would
+    // still pass every assertion above.
+    expect(await store.list('staged-estimate:')).toHaveLength(0)
   })
 
-  it('accepts a total within the $0.50 rounding tolerance', async () => {
-    const h = createHandler({ store: memoryStore() })
-    const body = await callTool('sage_stage_salary_estimate', { ...goodReport, total: 19261.4 }, h)
+  it('rejects when salary or fringe individually disagrees, even if the total happens to net out', async () => {
+    // Two wrong components summing to the right total must not slip through —
+    // this is the gap a total-only check would miss.
+    const store = memoryStore()
+    const h = createHandler({ store })
+    const skewed = { ...goodReport, salary: 16295 + 500, fringe: 2966 - 500 } // total still 19261
+    const body = await callTool('sage_stage_salary_estimate', skewed, h)
+    expect(body.result?.isError).toBe(true)
+    expect(body.result?.content[0].text).toContain('salary')
+    expect(body.result?.content[0].text).toContain('16795')
+    expect(await store.list('staged-estimate:')).toHaveLength(0)
+  })
+
+  it('rejects when period.months disagrees with inputs.months', async () => {
+    const store = memoryStore()
+    const h = createHandler({ store })
+    const inconsistent = { ...goodReport, period: { ...goodReport.period, months: 12 } } // inputs.months stays 9
+    const body = await callTool('sage_stage_salary_estimate', inconsistent, h)
+    expect(body.result?.isError).toBe(true)
+    expect(body.result?.content[0].text).toContain('period.months')
+    expect(await store.list('staged-estimate:')).toHaveLength(0)
+  })
+
+  it('accepts exactly $0.50 off and rejects $0.51 off — the stated tolerance boundary', async () => {
+    const atBoundary = await callTool('sage_stage_salary_estimate', { ...goodReport, total: 19261.5 }, createHandler({ store: memoryStore() }))
+    expect(atBoundary.result?.isError).toBeFalsy()
+
+    const justOver = await callTool('sage_stage_salary_estimate', { ...goodReport, total: 19261.51 }, createHandler({ store: memoryStore() }))
+    expect(justOver.result?.isError).toBe(true)
+  })
+
+  it('accepts a valid zero-effort report — salary, fringe, and total all zero', async () => {
+    const zeroReport = {
+      ...goodReport,
+      inputs: { monthlySalary: 3621, inflation: 0, effortPct: 0, months: 9, fringeRate: 18.2 },
+      substitution: '3621 * 1.00 * 0.00 * 9 = 0',
+      salary: 0, fringe: 0, total: 0,
+    }
+    const body = await callTool('sage_stage_salary_estimate', zeroReport, createHandler({ store: memoryStore() }))
     expect(body.result?.isError).toBeFalsy()
+    expect(body.result?.structuredContent).toMatchObject({ verified_salary: 0, verified_fringe: 0, verified_total: 0 })
+  })
+
+  it('is a schema validation error, not a silent default, for zero sources', async () => {
+    const body = await callTool('sage_stage_salary_estimate', { ...goodReport, sources: [] }, createHandler({ store: memoryStore() }))
+    const isToolError = body.result?.isError === true
+    const isRpcError = body.error !== undefined
+    expect(isToolError || isRpcError).toBe(true)
+    expect(body.result?.structuredContent).toBeUndefined()
+  })
+
+  it('keeps the text block and structuredContent in agreement', async () => {
+    const body = await callTool('sage_stage_salary_estimate', goodReport, createHandler({ store: memoryStore() }))
+    expect(JSON.parse(body.result!.content[0].text)).toEqual(body.result!.structuredContent)
   })
 })
 
@@ -489,5 +610,24 @@ describe('audit log', () => {
     const body = await callTool('sage_get_budget', { budget_id: 'B158116' }, h)
     expect(body.result?.isError).toBeFalsy()
     expect(body.result?.structuredContent).toMatchObject({ id: 'B158116' })
+  })
+
+  it('records every tool, not just sage_get_budget', async () => {
+    // Every earlier test in this file exercises only sage_get_budget's audit
+    // record. auditedCall wraps all six tools identically, but nothing had
+    // proven a second one actually produces a correct record — a per-tool
+    // wiring mistake (e.g. forgetting to wrap a new tool) would pass every
+    // other test in this file and still go unnoticed.
+    const store = memoryStore()
+    const h = createHandler({ store })
+    await callTool('sage_get_rates', {
+      role: 'Grad-PhD', schedule: 1, level: 'Candidate', dept_group: 'g2', fiscal_year: 'FY26',
+    }, h)
+
+    const keys = await store.list('audit/')
+    expect(keys).toHaveLength(1)
+    const record = await store.get(keys[0]) as Record<string, unknown>
+    expect(record).toMatchObject({ tool: 'sage_get_rates', outcome: 'success' })
+    expect(record.result).toMatchObject({ role: 'Grad-PhD', monthly_salary: 3621 })
   })
 })
