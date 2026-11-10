@@ -1,4 +1,4 @@
-import { useState, useRef, Fragment } from 'react'
+import { useState, useRef, useEffect, Fragment } from 'react'
 import {
   Button, Pill, ConfidenceChip, SourceTag,
   AIDisclaimer, Header, Footer,
@@ -1846,6 +1846,44 @@ function Stat({ k, v, sub, confidence, source }: { k: string; v: string; sub?: s
 // PersonnelPanel — new right-panel design (matches the user's reference)
 // =====================================================================
 
+// Annual tuition and fees for a graduate role, from /api/sage/tuition (which
+// asks the MCP server's sage_get_tuition). The figures are read from the UW
+// dashboard's image, so the UI must keep saying so wherever it shows one.
+type TuitionQuote = { grand_total: number; program: string; category: string; year: string; crawled_at: string }
+type TuitionLookup =
+  | { status: 'off' | 'loading' }
+  | { status: 'ok'; quote: TuitionQuote }
+  | { status: 'none' | 'unavailable'; message: string }
+
+const TUITION_CAMPUSES = ['Seattle', 'Bothell', 'Tacoma']
+const TUITION_RESIDENCIES = ['Resident', 'Nonresident']
+
+function useTuitionLookup(level: 'Masters' | 'Doctoral' | null, campus: string, residency: string): TuitionLookup {
+  const key = level ? `${campus}|${residency}|${level}` : null
+  const [answer, setAnswer] = useState<{ key: string; lookup: TuitionLookup } | null>(null)
+
+  useEffect(() => {
+    if (!key || !level) return
+    let cancelled = false
+    const finish = (lookup: TuitionLookup) => { if (!cancelled) setAnswer({ key, lookup }) }
+    fetch(`/api/sage/tuition?${new URLSearchParams({ campus, residency, level })}`)
+      .then(async res => {
+        // A deployment without the function answers with the SPA's index.html.
+        if (!(res.headers.get('content-type') ?? '').includes('json')) {
+          return finish({ status: 'unavailable', message: 'Live lookup is not available here' })
+        }
+        const body = await res.json()
+        if (res.ok) return finish({ status: 'ok', quote: body as TuitionQuote })
+        finish({ status: res.status === 404 ? 'none' : 'unavailable', message: body.error ?? `HTTP ${res.status}` })
+      })
+      .catch(() => finish({ status: 'unavailable', message: 'Live lookup is not available here' }))
+    return () => { cancelled = true }
+  }, [key, level, campus, residency])
+
+  if (!key) return { status: 'off' }
+  return answer?.key === key ? answer.lookup : { status: 'loading' }
+}
+
 function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
   row: WorkspaceRow; allRows: WorkspaceRow[]; period: number;
   onUpdate: (id: string, patch: Partial<WorkspaceRow>) => void;
@@ -1855,6 +1893,10 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
   const sub = computeSubtotal(row, allRows)
   const cfg = roleConfigFor(row.roleType)
   const [cascade, setCascade] = useState(true)
+  const [campus, setCampus] = useState(TUITION_CAMPUSES[0])
+  const [residency, setResidency] = useState(TUITION_RESIDENCIES[0])
+  const tuitionLevel = row.roleType === 'Grad-PhD' ? 'Doctoral' : row.roleType === 'Grad-Master' ? 'Masters' : null
+  const tuition = useTuitionLookup(tuitionLevel, campus, residency)
 
   // No role picked yet — show prompt
   if (!row.roleType || !cfg) {
@@ -1913,6 +1955,12 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
             <DropField label="LEVEL"         value={cfg.level}   options={cfg.levels} />
             <DropField label="BASE FTE"      value={fteValue}    options={cfg.ftes}
               onChange={v => onUpdate(row.id, { effortPct: Number(v.replace(/[^0-9]/g, '')) || 0 })} />
+            {tuitionLevel && (
+              <>
+                <DropField label="CAMPUS"    value={campus}    options={TUITION_CAMPUSES}    onChange={setCampus} />
+                <DropField label="RESIDENCY" value={residency} options={TUITION_RESIDENCIES} onChange={setResidency} />
+              </>
+            )}
           </div>
         )}
 
@@ -2038,11 +2086,33 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
               <div className="font-semibold text-ink">{cfg.fringeRate}% <span className="text-[10px] text-mute font-normal">(OMA, FY26)</span></div>
               <div className="text-[10px] text-sage-700 font-medium mt-0.5">FY26 rate · UW Finance · May 18, 2026</div>
             </div>
-            {cfg.tuitionAnnual > 0 && (
+            {cfg.tuitionAnnual > 0 && tuition.status === 'ok' && (
+              <div>
+                <div className="text-[10px] text-mute">Tuition &amp; fees</div>
+                <div className="font-semibold text-ink">${tuition.quote.grand_total.toLocaleString()}/yr <span className="text-[10px] text-mute font-normal">({tuition.quote.year})</span></div>
+                <div className="text-[10px] text-mute mt-0.5">{tuition.quote.program} · {tuition.quote.category}</div>
+                <div className="text-[10px] text-amber-700 font-medium mt-0.5">Read from the UW dashboard image, {new Date(tuition.quote.crawled_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} · confirm before use</div>
+              </div>
+            )}
+            {cfg.tuitionAnnual > 0 && tuition.status === 'loading' && (
+              <div>
+                <div className="text-[10px] text-mute">Tuition &amp; fees</div>
+                <div className="text-mute">Looking up…</div>
+              </div>
+            )}
+            {cfg.tuitionAnnual > 0 && tuition.status === 'none' && (
+              <div>
+                <div className="text-[10px] text-mute">Tuition &amp; fees</div>
+                <div className="font-semibold text-ink">No figure</div>
+                <div className="text-[10px] text-amber-700 font-medium mt-0.5">The dashboard lists no {tuitionLevel} programs for {campus}</div>
+              </div>
+            )}
+            {cfg.tuitionAnnual > 0 && (tuition.status === 'unavailable' || tuition.status === 'off') && (
               <div>
                 <div className="text-[10px] text-mute">Tuition</div>
                 <div className="font-semibold text-ink">${cfg.tuitionAnnual.toLocaleString()}/yr <span className="text-[10px] text-mute font-normal">(OPB, FY26)</span></div>
                 <div className="text-[10px] text-sage-700 font-medium mt-0.5">FY26 rate · OPB · May 18, 2026</div>
+                {tuition.status === 'unavailable' && <div className="text-[10px] text-mute mt-0.5">{tuition.message}</div>}
               </div>
             )}
           </div>
