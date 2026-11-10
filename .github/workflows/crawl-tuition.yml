@@ -27,7 +27,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24 # the lockfile is written by Node 24's npm; 22's rejects it
           cache: npm
 
       - run: npm ci
