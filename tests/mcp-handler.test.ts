@@ -3,6 +3,8 @@ import handler, { createHandler } from '../netlify/functions/mcp/index'
 import { memoryStore, type KVStore } from '../netlify/functions/mcp/store'
 import type { FetchLike } from '../netlify/functions/mcp/tools'
 import { RATE_SOURCES } from '../netlify/functions/mcp/rates'
+import { lookupTuition, type TuitionRow } from '../netlify/functions/mcp/tuition'
+import tuitionTable from '../netlify/functions/mcp/tuition-table.json' with { type: 'json' }
 
 // WHY THIS FILE EXISTS
 //
@@ -120,11 +122,11 @@ describe('auth', () => {
   })
 })
 
-const READ_ONLY_TOOLS = ['sage_check_rate_sources', 'sage_compute_totals', 'sage_get_budget', 'sage_get_rates']
+const READ_ONLY_TOOLS = ['sage_check_rate_sources', 'sage_compute_totals', 'sage_get_budget', 'sage_get_rates', 'sage_get_tuition']
 const STAGING_TOOLS = ['sage_stage_rates', 'sage_stage_salary_estimate']
 
 describe('tool contract', () => {
-  it('advertises exactly these six tools, and never write_to_sage or submit', async () => {
+  it('advertises exactly these seven tools, and never write_to_sage or submit', async () => {
     // A new tool showing up here is a change to the endpoint's public surface
     // and to what an agent is allowed to do; it should be a deliberate edit.
     // write_to_sage/submit must never appear — no SAGE write API exists (plan
@@ -295,6 +297,62 @@ describe('sage_get_rates', () => {
       role: 'Grad-PhD', schedule: 1, level: 'Candidate', dept_group: 'g2', fiscal_year: 'FY26',
     })
     expect(JSON.parse(body.result!.content[0].text)).toEqual(body.result!.structuredContent)
+  })
+})
+
+describe('sage_get_tuition', () => {
+  // The table is read from screenshots, so the only integrity it can have is
+  // internal: every kept row's fee lines must add up to its own total. A row
+  // that breaks this is a misread digit that got past the crawler.
+  const rows = tuitionTable.rows as TuitionRow[]
+
+  it('serves only rows whose fee lines add up to their grand total', () => {
+    const kept = rows.filter(r => r.status === 'ok')
+    expect(kept.length).toBeGreaterThan(0)
+    for (const r of kept) {
+      const sum = Object.values(r.fees!).reduce((a, b) => a + b, 0)
+      expect(sum, `${r.campus} / ${r.residency} / ${r.level}`).toBe(r.grandTotal)
+    }
+  })
+
+  it('labels every answer as an image read, with its program and crawl date', async () => {
+    const body = await callTool('sage_get_tuition', { campus: 'Seattle', residency: 'Resident', level: 'Masters' })
+    const out = body.result!.structuredContent!
+    expect(out.verification).toBe('image-read, sum-checked, not source data')
+    expect(out.program).toBeTruthy()
+    expect(out.crawled_at).toBeTruthy()
+    const fees = out.fees as Record<string, number>
+    expect(Object.values(fees).reduce((a, b) => a + b, 0)).toBe(out.grand_total)
+  })
+
+  it('returns a tool error, never a number, for a combination with no reading', async () => {
+    const missing = rows.find(r => r.status !== 'ok')
+    if (!missing) return // every combination read cleanly in this crawl
+    const body = await callTool('sage_get_tuition', {
+      campus: missing.campus.replace(' Campus', ''), residency: missing.residency, level: missing.level,
+    })
+    expect(body.result!.isError).toBe(true)
+    expect(body.result!.structuredContent).toBeUndefined()
+  })
+
+  it('rejects a campus outside the three the dashboard has', async () => {
+    const res = await call(request({
+      token: `Bearer ${TOKEN}`,
+      body: rpc('tools/call', { name: 'sage_get_tuition', arguments: { campus: 'Spokane', residency: 'Resident', level: 'Masters' } }, 7),
+    }))
+    const body = await res.json() as { result?: { isError?: boolean }; error?: unknown }
+    expect(body.error ?? body.result?.isError).toBeTruthy()
+  })
+
+  it('matches on all three of campus, residency and level', () => {
+    const fixture: TuitionRow[] = [
+      { campus: 'Seattle Campus', residency: 'Resident', level: 'Masters', status: 'ok', grandTotal: 1 },
+      { campus: 'Seattle Campus', residency: 'Nonresident', level: 'Masters', status: 'ok', grandTotal: 2 },
+      { campus: 'Tacoma Campus', residency: 'Resident', level: 'Masters', status: 'ok', grandTotal: 3 },
+    ]
+    expect(lookupTuition('Seattle', 'Nonresident', 'Masters', fixture)?.grandTotal).toBe(2)
+    expect(lookupTuition('Tacoma', 'Resident', 'Masters', fixture)?.grandTotal).toBe(3)
+    expect(lookupTuition('Bothell', 'Resident', 'Masters', fixture)).toBeNull()
   })
 })
 

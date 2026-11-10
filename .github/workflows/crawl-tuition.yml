@@ -1,0 +1,69 @@
+name: Crawl tuition dashboard
+
+# Re-reads the UW tuition Tableau dashboard once a month and opens a pull
+# request with the new table. Nothing goes live until a person merges it:
+# the figures are read from screenshots, so the PR review is the approval step.
+#
+# Scheduled workflows only run from the default branch, so this file has to
+# exist on main even though the crawler and the MCP server live on mcp-build.
+
+on:
+  schedule:
+    - cron: '0 15 1 * *' # 1st of each month, 15:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mcp-build
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Crawl
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        # A row that fails its sum check is recorded as failed in the table;
+        # the reviewer should still see the run, so do not stop here.
+        run: node scripts/crawl-tuition.mjs || echo "::warning::some readings failed the sum check"
+
+      - name: Keep screenshots for the reviewer
+        uses: actions/upload-artifact@v4
+        with:
+          name: tuition-screenshots
+          path: screenshots/tuition-crawl/
+
+      - name: Open pull request if the figures changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # crawledAt changes on every run; only the rows matter.
+          if git diff --quiet -I'"crawledAt"' -- netlify/functions/mcp/tuition-table.json \
+             && git ls-files --error-unmatch netlify/functions/mcp/tuition-table.json >/dev/null 2>&1; then
+            echo "No change in tuition figures."
+            exit 0
+          fi
+          branch="tuition-crawl/$(date -u +%Y-%m)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add netlify/functions/mcp/tuition-table.json
+          git commit -m "Update tuition table from dashboard crawl"
+          git push --force origin "$branch"
+          gh pr create --base mcp-build --head "$branch" \
+            --title "Tuition table: $(date -u +%B\ %Y) crawl" \
+            --body "Figures were read from screenshots by a vision model and kept only when the fee lines add up to the on-screen total. Compare against the screenshots in this run's artifacts before merging." \
+            || echo "A pull request for this branch already exists."

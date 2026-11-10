@@ -3,6 +3,7 @@ import { randomUUID, createHash } from 'node:crypto'
 import { z } from 'zod'
 import { BUDGETS, totalsOf, computeSubtotal, type WorkspaceRow } from './budget'
 import { lookupRate, knownRateKeys, RATE_SOURCES, type RateRole } from './rates'
+import { lookupTuition, TUITION_META } from './tuition'
 import type { KVStore } from './store'
 
 // ---------------------------------------------------------------------
@@ -328,6 +329,67 @@ This is a prototype fixture mirroring the two rows the rest of SAGE demonstrates
             effective_date: entry.source.effectiveDate,
           },
           table_version: entry.tableVersion,
+        })
+      },
+    ),
+  )
+
+  server.registerTool(
+    'sage_get_tuition',
+    {
+      title: 'Get UW graduate tuition and fees',
+      description: `Look up annual full-time graduate tuition and fees for one campus, residency, and student level.
+
+The figures come from a monthly crawl of the UW tuition dashboard. That dashboard publishes its numbers only as an image, so each figure was read from a screenshot and kept only if the fee lines add up to the total shown on the same screen. Always tell the user the figure is an image read that needs confirming, and quote crawled_at.
+
+One program is recorded per combination (the dashboard's default, or its first listed program where there is no default) — report the program and category alongside the number, since other programs at the same level can cost more.
+
+Args:
+  - campus: "Seattle", "Bothell", or "Tacoma"
+  - residency: "Resident" or "Nonresident"
+  - level: "Masters", "Doctoral", "Professional", or "EducationalSpecialist"
+
+A combination the campus does not offer, or one whose reading failed its check, is a tool error, never a guessed number.`,
+      inputSchema: {
+        campus: z.enum(['Seattle', 'Bothell', 'Tacoma']),
+        residency: z.enum(['Resident', 'Nonresident']),
+        level: z.enum(['Masters', 'Doctoral', 'Professional', 'EducationalSpecialist']),
+      },
+      outputSchema: {
+        campus: z.string(),
+        residency: z.string(),
+        level: z.string(),
+        program: z.string(),
+        category: z.string(),
+        year: z.string(),
+        fees: z.record(z.string(), z.number()),
+        grand_total: z.number(),
+        verification: z.literal('image-read, sum-checked, not source data'),
+        source: z.string(),
+        crawled_at: z.string(),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ campus, residency, level }) => auditedCall(
+      store, agentId, 'sage_get_tuition', { campus, residency, level },
+      async () => {
+        const row = lookupTuition(campus, residency, level)
+        if (!row) return toolError(`Error: no crawl record for ${campus} / ${residency} / ${level}.`)
+        if (row.status !== 'ok') {
+          return toolError(`Error: no tuition figure for ${campus} / ${residency} / ${level} (${row.status}: ${row.reason ?? 'unknown'}).`)
+        }
+        return result({
+          campus,
+          residency,
+          level,
+          program: row.program ?? '',
+          category: row.category ?? '',
+          year: row.year ?? '',
+          fees: row.fees ?? {},
+          grand_total: row.grandTotal ?? 0,
+          verification: 'image-read, sum-checked, not source data' as const,
+          source: TUITION_META.source,
+          crawled_at: TUITION_META.crawledAt,
         })
       },
     ),

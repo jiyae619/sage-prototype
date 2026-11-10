@@ -1,0 +1,397 @@
+{
+  "source": "https://tableau.washington.edu/views/Graduate-ProfessionalTuitionandFees/AnnualTuition?%3Aembed=y&%3AapiID=embhost0",
+  "crawledAt": "2026-11-10T19:12:40.921Z",
+  "method": "screenshot read by qwen/qwen3.8-27b; kept only when fee lines sum to the on-screen total",
+  "rows": [
+    {
+      "campus": "Seattle Campus",
+      "residency": "Resident",
+      "level": "Masters",
+      "status": "ok",
+      "program": "Graduate Post-Bacc / Non-Matric",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Seattle_Campus-Resident-Masters.png",
+      "year": "2026-2027",
+      "category": "Graduate Post-Bacc / Non-Matric",
+      "fees": {
+        "BuildingFee": 662,
+        "FacilitiesRenovationFee": 210,
+        "IMABondFee": 96,
+        "OperatingFee": 21394,
+        "ServicesAndActivitiesFee": 546,
+        "TechnologyFee": 114,
+        "U-PASS": 243
+      },
+      "grandTotal": 23265
+    },
+    {
+      "campus": "Seattle Campus",
+      "residency": "Resident",
+      "level": "Doctoral",
+      "status": "ok",
+      "program": "Aeronautics & Astronautics",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Seattle_Campus-Resident-Doctoral.png",
+      "year": "2026-2027",
+      "category": "Graduate Tier III",
+      "fees": {
+        "BuildingFee": 662,
+        "FacilitiesRenovationFee": 210,
+        "IMABondFee": 96,
+        "OperatingFee": 21394,
+        "ServicesAndActivitiesFee": 546,
+        "TechnologyFee": 114,
+        "U-PASS": 243
+      },
+      "grandTotal": 23265
+    },
+    {
+      "campus": "Seattle Campus",
+      "residency": "Resident",
+      "level": "Professional",
+      "status": "ok",
+      "program": "Dentistry (DDS) - Year 1",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Seattle_Campus-Resident-Professional.png",
+      "year": "2026-2027",
+      "category": "Dentistry (DDS) - Year 1",
+      "fees": {
+        "BuildingFee": 2579,
+        "FacilitiesRenovationFee": 210,
+        "IMABondFee": 96,
+        "OperatingFee": 49003,
+        "ServicesAndActivitiesFee": 546,
+        "TechnologyFee": 114,
+        "U-PASS": 243
+      },
+      "grandTotal": 52791
+    },
+    {
+      "campus": "Seattle Campus",
+      "residency": "Resident",
+      "level": "EducationalSpecialist",
+      "status": "no-data",
+      "reason": "Select Graduate Program has no options for this selection"
+    },
+    {
+      "campus": "Seattle Campus",
+      "residency": "Nonresident",
+      "level": "Masters",
+      "status": "ok",
+      "program": "Graduate Post-Bacc / Non-Matric",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Seattle_Campus-Nonresident-Masters.png",
+      "year": "2026-2027",
+      "category": "Graduate Post-Bacc / Non-Matric",
+      "fees": {
+        "BuildingFee": 1376,
+        "FacilitiesRenovationFee": 210,
+        "IMABondFee": 96,
+        "OperatingFee": 37939,
+        "ServicesAndActivitiesFee": 546,
+        "TechnologyFee": 114,
+        "U-PASS": 243
+      },
+      "grandTotal": 40524
+    },
+    {
+      "campus": "Seattle Campus",
+      "residency": "Nonresident",
+      "level": "Doctoral",
+      "status": "ok",
+      "program": "Aeronautics & Astronautics",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Seattle_Campus-Nonresident-Doctoral.png",
+      "year": "2026-2027",
+      "category": "Graduate Tier III",
+      "fees": {
+        "BuildingFee": 1376,
+        "FacilitiesRenovationFee": 210,
+        "IMABondFee": 96,
+        "OperatingFee": 37939,
+        "ServicesAndActivitiesFee": 546,
+        "TechnologyFee": 114,
+        "U-PASS": 243
+      },
+      "grandTotal": 40524
+    },
+    {
+      "campus": "Seattle Campus",
+      "residency": "Nonresident",
+      "level": "Professional",
+      "status": "ok",
+      "program": "Dentistry (DDS) - Year 1",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Seattle_Campus-Nonresident-Professional.png",
+      "year": "2026-2027",
+      "category": "Dentistry (DDS) - Year 1",
+      "fees": {
+        "BuildingFee": 2183,
+        "FacilitiesRenovationFee": 210,
+        "IMABondFee": 96,
+        "OperatingFee": 70579,
+        "ServicesAndActivitiesFee": 546,
+        "TechnologyFee": 114,
+        "U-PASS": 243
+      },
+      "grandTotal": 73971
+    },
+    {
+      "campus": "Seattle Campus",
+      "residency": "Nonresident",
+      "level": "EducationalSpecialist",
+      "status": "no-data",
+      "reason": "Select Graduate Program has no options for this selection"
+    },
+    {
+      "campus": "Bothell Campus",
+      "residency": "Resident",
+      "level": "Masters",
+      "status": "ok",
+      "program": "Graduate Post-Bacc / Non-Matric",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Bothell_Campus-Resident-Masters.png",
+      "year": "2026-2027",
+      "category": "Graduate Post-Bacc / Non-Matric",
+      "fees": {
+        "ARCConstructionFee": 459,
+        "ARCProgrammingFee": 75,
+        "BuildingFee": 662,
+        "OperatingFee": 21394,
+        "ServicesAndActivitiesFee": 348,
+        "SportsFieldFee": 96,
+        "TechnologyFee": 129,
+        "U-PASS": 135
+      },
+      "grandTotal": 23298
+    },
+    {
+      "campus": "Bothell Campus",
+      "residency": "Resident",
+      "level": "Doctoral",
+      "status": "ok",
+      "program": "Bothell Visiting Student",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Bothell_Campus-Resident-Doctoral.png",
+      "year": "2026-2027",
+      "category": "Graduate Tier I",
+      "fees": {
+        "ARCConstructionFee": 459,
+        "ARCProgrammingFee": 75,
+        "BuildingFee": 541,
+        "OperatingFee": 17504,
+        "ServicesAndActivitiesFee": 348,
+        "SportsFieldFee": 96,
+        "TechnologyFee": 129,
+        "U-PASS": 135
+      },
+      "grandTotal": 19287
+    },
+    {
+      "campus": "Bothell Campus",
+      "residency": "Resident",
+      "level": "Professional",
+      "status": "no-data",
+      "reason": "Select Graduate Program has no options for this selection"
+    },
+    {
+      "campus": "Bothell Campus",
+      "residency": "Resident",
+      "level": "EducationalSpecialist",
+      "status": "no-data",
+      "reason": "Select Graduate Program has no options for this selection"
+    },
+    {
+      "campus": "Bothell Campus",
+      "residency": "Nonresident",
+      "level": "Masters",
+      "status": "ok",
+      "program": "Graduate Post-Bacc / Non-Matric",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Bothell_Campus-Nonresident-Masters.png",
+      "year": "2026-2027",
+      "category": "Graduate Post-Bacc / Non-Matric",
+      "fees": {
+        "ARCConstructionFee": 459,
+        "ARCProgrammingFee": 75,
+        "BuildingFee": 1376,
+        "OperatingFee": 37939,
+        "ServicesAndActivitiesFee": 348,
+        "SportsFieldFee": 96,
+        "TechnologyFee": 129,
+        "U-PASS": 135
+      },
+      "grandTotal": 40557
+    },
+    {
+      "campus": "Bothell Campus",
+      "residency": "Nonresident",
+      "level": "Doctoral",
+      "status": "ok",
+      "program": "Bothell Visiting Student",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Bothell_Campus-Nonresident-Doctoral.png",
+      "year": "2026-2027",
+      "category": "Graduate Tier I",
+      "fees": {
+        "ARCConstructionFee": 459,
+        "ARCProgrammingFee": 75,
+        "BuildingFee": 1132,
+        "OperatingFee": 31214,
+        "ServicesAndActivitiesFee": 348,
+        "SportsFieldFee": 96,
+        "TechnologyFee": 129,
+        "U-PASS": 135
+      },
+      "grandTotal": 33588
+    },
+    {
+      "campus": "Bothell Campus",
+      "residency": "Nonresident",
+      "level": "Professional",
+      "status": "no-data",
+      "reason": "Select Graduate Program has no options for this selection"
+    },
+    {
+      "campus": "Bothell Campus",
+      "residency": "Nonresident",
+      "level": "EducationalSpecialist",
+      "status": "no-data",
+      "reason": "Select Graduate Program has no options for this selection"
+    },
+    {
+      "campus": "Tacoma Campus",
+      "residency": "Resident",
+      "level": "Masters",
+      "status": "ok",
+      "program": "Graduate Post-Bacc / Non-Matric",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Tacoma_Campus-Resident-Masters.png",
+      "year": "2026-2027",
+      "category": "Graduate Post-Bacc / Non-Matric",
+      "fees": {
+        "BuildingFee": 662,
+        "OperatingFee": 21394,
+        "ServicesAndActivitiesFee": 516,
+        "TechnologyFee": 147,
+        "U-PASS": 135,
+        "YMCAFee": 540
+      },
+      "grandTotal": 23394
+    },
+    {
+      "campus": "Tacoma Campus",
+      "residency": "Resident",
+      "level": "Doctoral",
+      "status": "ok",
+      "program": "Computer Science and Systems",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Tacoma_Campus-Resident-Doctoral.png",
+      "year": "2026-2027",
+      "category": "Graduate Tier III",
+      "fees": {
+        "BuildingFee": 662,
+        "OperatingFee": 21394,
+        "ServicesAndActivitiesFee": 516,
+        "TechnologyFee": 147,
+        "U-PASS": 135,
+        "YMCAFee": 540
+      },
+      "grandTotal": 23394
+    },
+    {
+      "campus": "Tacoma Campus",
+      "residency": "Resident",
+      "level": "Professional",
+      "status": "no-data",
+      "reason": "Select Graduate Program has no options for this selection"
+    },
+    {
+      "campus": "Tacoma Campus",
+      "residency": "Resident",
+      "level": "EducationalSpecialist",
+      "status": "ok",
+      "program": "Education (School Psychology)",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Tacoma_Campus-Resident-EducationalSpecialist.png",
+      "year": "2026-2027",
+      "category": "Graduate Tier II",
+      "fees": {
+        "BuildingFee": 592,
+        "OperatingFee": 19145,
+        "ServicesAndActivitiesFee": 516,
+        "TechnologyFee": 147,
+        "U-PASS": 135,
+        "YMCAFee": 540
+      },
+      "grandTotal": 21075
+    },
+    {
+      "campus": "Tacoma Campus",
+      "residency": "Nonresident",
+      "level": "Masters",
+      "status": "ok",
+      "program": "Graduate Post-Bacc / Non-Matric",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Tacoma_Campus-Nonresident-Masters.png",
+      "year": "2026-2027",
+      "category": "Graduate Post-Bacc / Non-Matric",
+      "fees": {
+        "BuildingFee": 1376,
+        "OperatingFee": 37939,
+        "ServicesAndActivitiesFee": 516,
+        "TechnologyFee": 147,
+        "U-PASS": 135,
+        "YMCAFee": 540
+      },
+      "grandTotal": 40653
+    },
+    {
+      "campus": "Tacoma Campus",
+      "residency": "Nonresident",
+      "level": "Doctoral",
+      "status": "ok",
+      "program": "Computer Science and Systems",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Tacoma_Campus-Nonresident-Doctoral.png",
+      "year": "2026-2027",
+      "category": "Graduate Tier III",
+      "fees": {
+        "BuildingFee": 1376,
+        "OperatingFee": 37939,
+        "ServicesAndActivitiesFee": 516,
+        "TechnologyFee": 147,
+        "U-PASS": 135,
+        "YMCAFee": 540
+      },
+      "grandTotal": 40653
+    },
+    {
+      "campus": "Tacoma Campus",
+      "residency": "Nonresident",
+      "level": "Professional",
+      "status": "no-data",
+      "reason": "Select Graduate Program has no options for this selection"
+    },
+    {
+      "campus": "Tacoma Campus",
+      "residency": "Nonresident",
+      "level": "EducationalSpecialist",
+      "status": "ok",
+      "program": "Education (School Psychology)",
+      "waivers": "(All)",
+      "screenshot": "screenshots/tuition-crawl/Tacoma_Campus-Nonresident-EducationalSpecialist.png",
+      "year": "2026-2027",
+      "category": "Graduate Tier II",
+      "fees": {
+        "BuildingFee": 1233,
+        "OperatingFee": 34005,
+        "ServicesAndActivitiesFee": 516,
+        "TechnologyFee": 147,
+        "U-PASS": 135,
+        "YMCAFee": 540
+      },
+      "grandTotal": 36576
+    }
+  ]
+}
