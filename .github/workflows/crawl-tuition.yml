@@ -27,10 +27,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24 # the lockfile is written by Node 24's npm; 22's rejects it
+          node-version: 24
           cache: npm
 
-      - run: npm ci
+      # Not `npm ci`: the lockfile is written on macOS and omits two Linux-only
+      # optional packages, which `npm ci` treats as out of sync. Netlify builds
+      # with `npm install` for the same reason.
+      - run: npm install --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
 
       - name: Crawl
