@@ -133,6 +133,37 @@ describe('each device has its own worksheet', () => {
 })
 
 describe('autosave ordering', () => {
+  it('keeps the newer save when two saves overlap and the older one writes last', async () => {
+    // The gate's interleaving (2026-11-10, confirmed 2/2): both requests read
+    // the stored revision before either writes, then the older one writes
+    // last. A plain read-check-write lets it win; compare-and-set must not.
+    const inner = memoryStore()
+    let releaseOlder!: () => void
+    const olderMayWrite = new Promise<void>(r => { releaseOlder = r })
+    let olderHasRead!: () => void
+    const olderRead = new Promise<void>(r => { olderHasRead = r })
+    let firstWrite = true
+    const store: KVStore = {
+      ...inner,
+      async setIfVersion(key, value, version) {
+        if (firstWrite && (value as { rev: number }).rev === 100) {
+          firstWrite = false
+          olderHasRead()
+          await olderMayWrite
+        }
+        return inner.setIfVersion(key, value, version)
+      },
+    }
+    const device = randomUUID()
+    const older = save(store, device, travel(1000), 100)
+    await olderRead
+    expect((await save(store, device, travel(2000), 200)).status).toBe(200)
+    releaseOlder()
+    expect((await older).status).toBe(409)
+    expect((await serverBudget(store, device)).totals.total).toBe(2000)
+  })
+
+
   it('drops an older save that lands after a newer one', async () => {
     const store = memoryStore()
     const device = randomUUID()
@@ -178,7 +209,7 @@ describe('/api/sage/worksheet is a public write, so it accepts only a worksheet'
   })
 
   it('answers 502 when the store cannot save, so the browser knows the server is behind', async () => {
-    const broken: KVStore = { ...memoryStore(), set: async () => { throw new Error('blobs down') } }
+    const broken: KVStore = { ...memoryStore(), setIfVersion: async () => { throw new Error('blobs down') } }
     expect((await send(broken, valid())).status).toBe(502)
   })
 

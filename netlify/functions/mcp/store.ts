@@ -17,6 +17,12 @@ export interface KVStore {
   // list a day's calls (key shape "audit/<day>/<callId>"); Phase 4's ledger
   // reconciliation is the reason this exists, not just test convenience.
   list(prefix: string): Promise<string[]>
+  // Compare-and-set for the saved worksheet. getVersioned returns the value
+  // with an opaque version; setIfVersion writes only if the key is still at
+  // that version (null = only if the key does not exist yet) and returns
+  // whether it wrote. Two overlapping saves cannot both win.
+  getVersioned(key: string): Promise<{ value: unknown; version: string } | null>
+  setIfVersion(key: string, value: unknown, version: string | null): Promise<boolean>
 }
 
 export function blobsStore(name: string): KVStore {
@@ -36,20 +42,51 @@ export function blobsStore(name: string): KVStore {
       const { blobs } = await open().list({ prefix })
       return blobs.map(b => b.key)
     },
+    async getVersioned(key) {
+      const found = await open().getWithMetadata(key, { type: 'json' })
+      if (!found) return null
+      // Netlify Blobs returns an ETag. The local `netlify dev` sandbox
+      // (netlify-cli's bundled @netlify/blobs 10.x) does not, so there is
+      // nothing to compare against; '' marks that case for setIfVersion.
+      return { value: found.data, version: found.etag ?? '' }
+    },
+    async setIfVersion(key, value, version) {
+      if (version === '') {
+        console.warn(JSON.stringify({ at: new Date().toISOString(), tool: 'blobs-cas', outcome: 'unversioned-write', key }))
+        await open().setJSON(key, value)
+        return true
+      }
+      const res = await open().setJSON(key, value, version === null ? { onlyIfNew: true } : { onlyIfMatch: version })
+      return res.modified
+    },
   }
 }
 
 export function memoryStore(): KVStore {
   const data = new Map<string, unknown>()
+  const versions = new Map<string, number>()
+  let nextVersion = 1
+  const bump = (key: string) => versions.set(key, nextVersion++)
   return {
     async get(key) {
       return data.has(key) ? data.get(key)! : null
     },
     async set(key, value) {
       data.set(key, value)
+      bump(key)
     },
     async list(prefix) {
       return [...data.keys()].filter(k => k.startsWith(prefix))
+    },
+    async getVersioned(key) {
+      return data.has(key) ? { value: data.get(key)!, version: String(versions.get(key)) } : null
+    },
+    async setIfVersion(key, value, version) {
+      const current = data.has(key) ? String(versions.get(key)) : null
+      if (current !== version) return false
+      data.set(key, value)
+      bump(key)
+      return true
     },
   }
 }

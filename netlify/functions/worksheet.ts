@@ -44,16 +44,22 @@ export function createHandler(deps: { store?: KVStore } = {}) {
     const key = worksheetKey(LIVE_WORKSHEET_BUDGET_ID, body.data.worksheet_id)
     const saved: SavedWorksheet = { rows: body.data.rows, rev: body.data.rev, savedAt: new Date().toISOString() }
     try {
-      // Read-then-write, not atomic: it stops a slow older save from landing
-      // after a newer one, which is the case a debounced autosave produces.
-      const previous = await store.get(key) as SavedWorksheet | null
-      if (previous && previous.rev >= saved.rev) return json(409, { error: 'A newer save already landed', rev: previous.rev })
-      await store.set(key, saved)
+      // Compare-and-set: write only if nobody saved since we read. If someone
+      // did, re-read and re-check the revision, so an older save can never
+      // replace a newer one even when the two requests overlap.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const previous = await store.getVersioned(key)
+        const previousRev = (previous?.value as SavedWorksheet | undefined)?.rev
+        if (previousRev !== undefined && previousRev >= saved.rev) return json(409, { error: 'A newer save already landed', rev: previousRev })
+        if (await store.setIfVersion(key, saved, previous?.version ?? null)) {
+          return json(200, { saved_at: saved.savedAt, rev: saved.rev, total: totalsOf(saved.rows).total })
+        }
+      }
+      return json(503, { error: 'Too many overlapping saves; try again' })
     } catch (err) {
       console.error(JSON.stringify({ at: saved.savedAt, tool: 'worksheet-write', outcome: 'error', error: err instanceof Error ? err.message : String(err) }))
       return json(502, { error: 'Could not save the worksheet' })
     }
-    return json(200, { saved_at: saved.savedAt, rev: saved.rev, total: totalsOf(saved.rows).total })
   }
 }
 

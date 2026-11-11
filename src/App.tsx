@@ -102,7 +102,7 @@ export default function App() {
   // Cross-tab shared state
   const [issues, setIssues] = useState<Issue[]>(capturePreset.issues ?? [])
   const [rows, setRows] = useState<WorkspaceRow[]>(capturePreset.rows ?? BLANK_ROWS)
-  // Save this device's worksheet so sage_get_budget, given the device's
+  // Save this tab's worksheet so sage_get_budget, given the tab's
   // worksheet id, prices B158116 from the same rows these screens do
   // (netlify/functions/worksheet.ts). Debounced so typing a salary is one
   // save, not one per keystroke; rev lets the server drop a late older save.
