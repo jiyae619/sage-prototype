@@ -44,9 +44,11 @@ export function createHandler(deps: { store?: KVStore } = {}) {
     const key = worksheetKey(LIVE_WORKSHEET_BUDGET_ID, body.data.worksheet_id)
     const saved: SavedWorksheet = { rows: body.data.rows, rev: body.data.rev, savedAt: new Date().toISOString() }
     try {
-      // Compare-and-set: write only if nobody saved since we read. If someone
-      // did, re-read and re-check the revision, so an older save can never
-      // replace a newer one even when the two requests overlap.
+      // Compare-and-set: write only if nobody saved since we read; if someone
+      // did, re-read and re-check the revision. This is a backstop, not the
+      // guarantee: Netlify Blobs let an older conditional write through under
+      // a burst of concurrent writes (measured 2026-11-10). The guarantee is
+      // that each tab sends one save at a time (src/worksheetSync.ts).
       for (let attempt = 0; attempt < 5; attempt++) {
         const previous = await store.getVersioned(key)
         const previousRev = (previous?.value as SavedWorksheet | undefined)?.rev

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { worksheetId } from './worksheetSync'
+import { saveWorksheet } from './worksheetSync'
 import { TopNav, FeedbackToast, TutorialOverlay, type TutorialStep, type TabKey, type AwardsStep } from './ui'
 import {
   WorkspaceScreen,
@@ -104,24 +104,11 @@ export default function App() {
   const [rows, setRows] = useState<WorkspaceRow[]>(capturePreset.rows ?? BLANK_ROWS)
   // Save this tab's worksheet so sage_get_budget, given the tab's
   // worksheet id, prices B158116 from the same rows these screens do
-  // (netlify/functions/worksheet.ts). Debounced so typing a salary is one
-  // save, not one per keystroke; rev lets the server drop a late older save.
-  // Capture scenes are staged screenshots and are not saved.
+  // (src/worksheetSync.ts). Debounced so typing a salary is one save, not
+  // one per keystroke. Capture scenes are staged screenshots and are not saved.
   useEffect(() => {
     if (captureScene) return
-    const timer = setTimeout(() => {
-      fetch('/api/sage/worksheet', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ budget_id: 'B158116', worksheet_id: worksheetId(), rev: Date.now(), rows }),
-      })
-        .then(async res => {
-          // A deployment without the function answers with the SPA's index.html.
-          if (!(res.headers.get('content-type') ?? '').includes('json')) return
-          if (!res.ok && res.status !== 409) console.warn('Worksheet not saved; the MCP server still has the previous version', res.status, await res.text())
-        })
-        .catch(err => console.warn('Worksheet not saved; the MCP server still has the previous version', err))
-    }, 600)
+    const timer = setTimeout(() => saveWorksheet(rows), 600)
     return () => clearTimeout(timer)
   }, [rows, captureScene])
   const [proposedTotal, setProposedTotal] = useState<number>(capturePreset.proposedTotal ?? 0)
