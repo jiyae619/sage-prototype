@@ -52,7 +52,9 @@ export function createHandler(deps: { store?: KVStore } = {}) {
         const previousRev = (previous?.value as SavedWorksheet | undefined)?.rev
         if (previousRev !== undefined && previousRev >= saved.rev) return json(409, { error: 'A newer save already landed', rev: previousRev })
         if (await store.setIfVersion(key, saved, previous?.version ?? null)) {
-          return json(200, { saved_at: saved.savedAt, rev: saved.rev, total: totalsOf(saved.rows).total })
+          // version_checked is false when the store gave no version to compare
+          // (the local netlify dev sandbox), so the ordering was not enforced.
+          return json(200, { saved_at: saved.savedAt, rev: saved.rev, total: totalsOf(saved.rows).total, version_checked: previous?.version !== '' })
         }
       }
       return json(503, { error: 'Too many overlapping saves; try again' })
