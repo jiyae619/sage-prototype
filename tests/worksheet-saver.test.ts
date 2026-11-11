@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createWorksheetSaver, type SaveOutcome } from '../src/worksheetSync'
+import { createWorksheetSaver, outcomeOf, type SaveOutcome } from '../src/worksheetSync'
 
 // WHY THIS FILE EXISTS
 //
@@ -105,5 +105,21 @@ describe('worksheet saver', () => {
     save(['A'])
     for (let i = 0; i < 10; i++) await tick()
     expect(waits).toEqual([1000, 2000, 4000])
+  })
+})
+
+describe('what a save response means', () => {
+  // The gate's scenario (2026-11-10, confirmed 2/2): a Netlify gateway 502
+  // has an HTML body, and was mistaken for "no save endpoint here" and
+  // dropped. A server error must be retried whatever its body.
+  it.each([
+    ['gateway 502 with an HTML body', new Response('<html>Bad Gateway</html>', { status: 502, headers: { 'content-type': 'text/html' } }), 'retry'],
+    ['503 with a JSON body', new Response('{"error":"busy"}', { status: 503, headers: { 'content-type': 'application/json' } }), 'retry'],
+    ['saved', new Response('{"rev":1}', { status: 200, headers: { 'content-type': 'application/json' } }), 'saved'],
+    ['a newer save already landed', new Response('{"rev":9}', { status: 409, headers: { 'content-type': 'application/json' } }), 'saved'],
+    ['no save endpoint on this deployment (SPA index.html)', new Response('<html></html>', { status: 200, headers: { 'content-type': 'text/html' } }), 'saved'],
+    ['invalid worksheet', new Response('{"error":"Invalid worksheet"}', { status: 400, headers: { 'content-type': 'application/json' } }), 'rejected'],
+  ] as const)('%s', async (_name, res, want) => {
+    expect(await outcomeOf(res)).toBe(want)
   })
 })

@@ -63,6 +63,20 @@ export function createWorksheetSaver(
 
 const WARN = 'Worksheet not saved; the MCP server still has the previous version'
 
+// Maps one HTTP response to what the saver should do next. Exported for tests.
+export async function outcomeOf(res: Response): Promise<SaveOutcome> {
+  // Server errors first, whatever their body: a gateway 502 is HTML.
+  if (res.status >= 500) {
+    console.warn(`${WARN}; retrying`, res.status)
+    return 'retry'
+  }
+  // A deployment without the function answers 200 with the SPA's index.html:
+  // there is no server copy to keep in step, so nothing to retry.
+  if (res.ok || res.status === 409) return 'saved' // 409: a newer save already landed
+  console.warn(`${WARN}; the server rejected it`, res.status, await res.text())
+  return 'rejected'
+}
+
 export const saveWorksheet = createWorksheetSaver(async (rows, rev) => {
   let res: Response
   try {
@@ -75,14 +89,5 @@ export const saveWorksheet = createWorksheetSaver(async (rows, rev) => {
     console.warn(`${WARN}; retrying`, err)
     return 'retry'
   }
-  // A deployment without the function answers with the SPA's index.html:
-  // there is no server copy to keep in step, so nothing to retry.
-  if (!(res.headers.get('content-type') ?? '').includes('json')) return 'saved'
-  if (res.ok || res.status === 409) return 'saved' // 409: a newer save already landed
-  if (res.status >= 500) {
-    console.warn(`${WARN}; retrying`, res.status)
-    return 'retry'
-  }
-  console.warn(`${WARN}; the server rejected it`, res.status, await res.text())
-  return 'rejected'
+  return outcomeOf(res)
 })
