@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { randomUUID, createHash } from 'node:crypto'
 import { z } from 'zod'
-import { BUDGETS, totalsOf, computeSubtotal, type WorkspaceRow } from './budget'
+import { BUDGETS, currentRows, totalsOf, computeSubtotal, type WorkspaceRow } from './budget'
 import { lookupRate, knownRateKeys, RATE_SOURCES, type RateRole } from './rates'
 import { lookupTuition, TUITION_META } from './tuition'
 import type { KVStore } from './store'
@@ -39,7 +39,7 @@ const DeptGroupSchema = z.enum(['g1', 'g2', 'g3', 'g4', 'nih']).describe(
 )
 
 // One worksheet row. Matches WorkspaceRow in budget.ts / src/budgetEngine.ts.
-const RowSchema = z.object({
+export const RowSchema = z.object({
   id: z.string().min(1).describe('Row id, e.g. "per1", "fringe", "fa"'),
   cellRef: z.string().default('').describe('Excel cell reference, e.g. "F4"'),
   category: CategorySchema,
@@ -205,6 +205,8 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
 
 Returns the worksheet rows, the computed totals (direct costs, F&A, MTDC base, total), the Notice of Award (NoA) total, and delta = noa_total - total (positive means the worksheet is under the award).
 
+For B158116 the rows are the live worksheet as last saved from the SAGE screen, so these totals match what the user sees. rows_source says which: "worksheet" (saved edits, with worksheet_saved_at), "canonical" (worksheet blank, the fixed award proposal), or "canonical-store-unavailable" (the saved worksheet could not be read; treat the figures as possibly out of date).
+
 Args:
   - budget_id (string): SAGE budget id, e.g. "B158116"
 
@@ -219,6 +221,8 @@ Read-only. Does not modify anything. Use sage_compute_totals to price a hypothet
         totals: TotalsSchema,
         delta: z.number(),
         rows: z.array(RowSchema),
+        rows_source: z.enum(['worksheet', 'canonical', 'canonical-store-unavailable']),
+        worksheet_saved_at: z.string().nullable(),
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
@@ -227,14 +231,17 @@ Read-only. Does not modify anything. Use sage_compute_totals to price a hypothet
       if (!budget) {
         return toolError(`Error: unknown budget_id '${budget_id}'. Known ids: ${Object.keys(BUDGETS).join(', ')}`)
       }
-      const totals = pickTotals(budget.rows)
+      const live = await currentRows(store, budget)
+      const totals = pickTotals(live.rows)
       return result({
         id: budget.id,
         title: budget.title,
         noa_total: budget.noaTotal,
         totals,
         delta: budget.noaTotal - totals.total,
-        rows: budget.rows,
+        rows: live.rows,
+        rows_source: live.source,
+        worksheet_saved_at: live.savedAt,
       })
     }),
   )

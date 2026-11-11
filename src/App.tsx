@@ -101,6 +101,27 @@ export default function App() {
   // Cross-tab shared state
   const [issues, setIssues] = useState<Issue[]>(capturePreset.issues ?? [])
   const [rows, setRows] = useState<WorkspaceRow[]>(capturePreset.rows ?? BLANK_ROWS)
+  // Save the worksheet so the MCP server's sage_get_budget prices B158116 from
+  // the same rows these screens do (netlify/functions/worksheet.ts). Debounced
+  // so typing a salary is one save, not one per keystroke. Capture scenes are
+  // staged screenshots and must not overwrite the shared saved worksheet.
+  useEffect(() => {
+    if (captureScene) return
+    const timer = setTimeout(() => {
+      fetch('/api/sage/worksheet', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ budget_id: 'B158116', rows }),
+      })
+        .then(async res => {
+          // A deployment without the function answers with the SPA's index.html.
+          if (!(res.headers.get('content-type') ?? '').includes('json')) return
+          if (!res.ok) console.warn('Worksheet not saved; the MCP server still has the previous version', res.status, await res.text())
+        })
+        .catch(err => console.warn('Worksheet not saved; the MCP server still has the previous version', err))
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [rows, captureScene])
   const [proposedTotal, setProposedTotal] = useState<number>(capturePreset.proposedTotal ?? 0)
   const [noaUploaded, setNoaUploaded] = useState(capturePreset.noaUploaded ?? false)
   const [reconciliationActive, setReconciliationActive] = useState(capturePreset.reconciliationActive ?? false)

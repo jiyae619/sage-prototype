@@ -20,16 +20,20 @@ export interface KVStore {
 }
 
 export function blobsStore(name: string): KVStore {
+  // Strong consistency: the saved worksheet (worksheet/<id>) must be readable
+  // by sage_get_budget right after the browser saves it, not up to a minute
+  // later, or the agent and the screen disagree in between.
+  const open = () => getStore({ name, consistency: 'strong' })
   return {
     async get(key) {
-      const value = await getStore(name).get(key, { type: 'json' })
+      const value = await open().get(key, { type: 'json' })
       return value ?? null
     },
     async set(key, value) {
-      await getStore(name).setJSON(key, value)
+      await open().setJSON(key, value)
     },
     async list(prefix) {
-      const { blobs } = await getStore(name).list({ prefix })
+      const { blobs } = await open().list({ prefix })
       return blobs.map(b => b.key)
     },
   }
