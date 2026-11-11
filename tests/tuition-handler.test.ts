@@ -24,7 +24,7 @@ afterEach(() => {
 const viaRealMcp: FetchLike = (url, init) => mcpHandler(new Request(url, init), {} as never)
 
 const get = (query: string, fetchImpl: FetchLike = viaRealMcp, method = 'GET') =>
-  createHandler({ fetchImpl })(new Request(`https://sage.example/api/sage/tuition${query}`, { method }), {} as never)
+  createHandler({ fetchImpl })(new Request(`https://sage.example/api/sage/tuition${query}`, { method }))
 
 describe('/api/sage/tuition', () => {
   it('returns the figure sage_get_tuition gives, labelled as an image read', async () => {

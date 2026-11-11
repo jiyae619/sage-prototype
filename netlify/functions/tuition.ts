@@ -8,7 +8,7 @@
 // No model sits in this path on purpose: the UI already knows which tool it
 // wants, so there is nothing for a model to decide.
 
-import type { Config, Context } from '@netlify/functions'
+import type { Config } from '@netlify/functions'
 import { z } from 'zod'
 import type { FetchLike } from './mcp/tools'
 
@@ -24,7 +24,7 @@ const json = (status: number, body: unknown) =>
 export function createHandler(deps: { fetchImpl?: FetchLike } = {}) {
   const fetchImpl = deps.fetchImpl ?? (fetch as unknown as FetchLike)
 
-  return async (req: Request, _context: Context): Promise<Response> => {
+  return async (req: Request): Promise<Response> => {
     if (req.method !== 'GET') return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET' } })
 
     const token = process.env.MCP_BEARER_TOKEN
