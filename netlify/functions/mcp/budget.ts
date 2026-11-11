@@ -29,29 +29,32 @@ export const BUDGETS: Record<string, Budget> = {
 }
 
 // ---------------------------------------------------------------------
-// The live worksheet, saved by the browser.
+// The live worksheet, saved by the browser — one per device.
 //
 // The UI prices B158116 from the worksheet once it holds real numbers and
-// from AI_PREFILL while it is blank (src/budgetRows.ts). The browser saves
-// its worksheet to /api/sage/worksheet, and sage_get_budget reads it back
-// through currentRows() with the same rule, so an agent and the screen see
-// the same figures. There is one saved worksheet for the whole demo site,
-// not one per visitor.
+// from AI_PREFILL while it is blank (src/budgetRows.ts). Each browser makes
+// a random worksheet id once (src/worksheetSync.ts) and saves its worksheet
+// under that id, so two people trying the prototype never see each other's
+// numbers. sage_get_budget reads a device's worksheet back only when given
+// its worksheet_id, with the same blank-means-fixture rule as the screens.
+// Without an id it serves the fixture, which no anonymous visitor can change.
 // ---------------------------------------------------------------------
 
 export const LIVE_WORKSHEET_BUDGET_ID = 'B158116'
-export const worksheetKey = (budgetId: string) => `worksheet/${budgetId}`
+export const worksheetKey = (budgetId: string, worksheetId: string) => `worksheet/${budgetId}/${worksheetId}`
 
-export type SavedWorksheet = { rows: WorkspaceRow[]; savedAt: string }
+// rev orders saves from one device: a slower, older request must not
+// replace a newer one that landed first.
+export type SavedWorksheet = { rows: WorkspaceRow[]; rev: number; savedAt: string }
 export type RowsSource = 'worksheet' | 'canonical' | 'canonical-store-unavailable'
 
-export async function currentRows(store: KVStore, budget: Budget): Promise<{
+export async function currentRows(store: KVStore, budget: Budget, worksheetId?: string): Promise<{
   rows: WorkspaceRow[]; source: RowsSource; savedAt: string | null
 }> {
-  if (budget.id !== LIVE_WORKSHEET_BUDGET_ID) return { rows: budget.rows, source: 'canonical', savedAt: null }
+  if (budget.id !== LIVE_WORKSHEET_BUDGET_ID || !worksheetId) return { rows: budget.rows, source: 'canonical', savedAt: null }
   let saved: SavedWorksheet | null
   try {
-    saved = await store.get(worksheetKey(budget.id)) as SavedWorksheet | null
+    saved = await store.get(worksheetKey(budget.id, worksheetId)) as SavedWorksheet | null
   } catch (err) {
     // Say so in the answer rather than pass the fixture off as the worksheet.
     console.error(JSON.stringify({ at: new Date().toISOString(), tool: 'worksheet-read', outcome: 'error', error: err instanceof Error ? err.message : String(err) }))

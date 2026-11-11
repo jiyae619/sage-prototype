@@ -1,14 +1,15 @@
 // Live worksheet save for the prototype UI — https://<site>/api/sage/worksheet
 //
-// The browser PUTs its Budget Worksheet here whenever it changes, and
-// sage_get_budget reads it back (see currentRows in ./mcp/budget.ts), so the
-// SAGE screens and an agent asking the MCP server price B158116 from the same
-// rows.
+// The browser PUTs its Budget Worksheet here after each edit, under its own
+// random worksheet id, and sage_get_budget reads it back when given that id
+// (see currentRows in ./mcp/budget.ts). So the SAGE screens and an agent
+// asking about the same device price B158116 from the same rows, and two
+// devices never see each other's numbers.
 //
-// No token: the browser cannot hold one. That makes this a public write, so
-// it accepts only B158116, only well-formed rows, and only a worksheet-sized
-// body. The worksheet holds the prototype's made-up demo data, and there is
-// one shared copy for the whole site, not one per visitor.
+// No token: the browser cannot hold one, so this is a public write. It can
+// only ever change the worksheet under the id it names (a random UUID), never
+// the fixed B158116 an agent gets without an id. It accepts only well-formed
+// rows and a worksheet-sized body.
 
 import type { Config } from '@netlify/functions'
 import { z } from 'zod'
@@ -20,6 +21,8 @@ const MAX_BODY_BYTES = 64 * 1024
 
 const BodySchema = z.object({
   budget_id: z.literal(LIVE_WORKSHEET_BUDGET_ID),
+  worksheet_id: z.string().uuid(),
+  rev: z.number().int().nonnegative(),
   rows: z.array(RowSchema).max(50),
 })
 
@@ -37,14 +40,20 @@ export function createHandler(deps: { store?: KVStore } = {}) {
     const body = BodySchema.safeParse(parsed)
     if (!body.success) return json(400, { error: 'Invalid worksheet', issues: body.error.issues.slice(0, 5) })
 
-    const saved: SavedWorksheet = { rows: body.data.rows, savedAt: new Date().toISOString() }
+    const store = deps.store ?? blobsStore('sage-mcp')
+    const key = worksheetKey(LIVE_WORKSHEET_BUDGET_ID, body.data.worksheet_id)
+    const saved: SavedWorksheet = { rows: body.data.rows, rev: body.data.rev, savedAt: new Date().toISOString() }
     try {
-      await (deps.store ?? blobsStore('sage-mcp')).set(worksheetKey(LIVE_WORKSHEET_BUDGET_ID), saved)
+      // Read-then-write, not atomic: it stops a slow older save from landing
+      // after a newer one, which is the case a debounced autosave produces.
+      const previous = await store.get(key) as SavedWorksheet | null
+      if (previous && previous.rev >= saved.rev) return json(409, { error: 'A newer save already landed', rev: previous.rev })
+      await store.set(key, saved)
     } catch (err) {
       console.error(JSON.stringify({ at: saved.savedAt, tool: 'worksheet-write', outcome: 'error', error: err instanceof Error ? err.message : String(err) }))
       return json(502, { error: 'Could not save the worksheet' })
     }
-    return json(200, { saved_at: saved.savedAt, total: totalsOf(saved.rows).total })
+    return json(200, { saved_at: saved.savedAt, rev: saved.rev, total: totalsOf(saved.rows).total })
   }
 }
 

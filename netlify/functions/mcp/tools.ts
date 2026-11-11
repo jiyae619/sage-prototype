@@ -205,14 +205,16 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
 
 Returns the worksheet rows, the computed totals (direct costs, F&A, MTDC base, total), the Notice of Award (NoA) total, and delta = noa_total - total (positive means the worksheet is under the award).
 
-For B158116 the rows are the live worksheet as last saved from the SAGE screen, so these totals match what the user sees. rows_source says which: "worksheet" (saved edits, with worksheet_saved_at), "canonical" (worksheet blank, the fixed award proposal), or "canonical-store-unavailable" (the saved worksheet could not be read; treat the figures as possibly out of date).
+Each device using the SAGE screen has its own B158116 worksheet. Pass that device's worksheet_id to get the rows and totals that user sees; without it you get the fixed award proposal. rows_source says which: "worksheet" (that device's saved edits, with worksheet_saved_at), "canonical" (no worksheet_id, or that worksheet is still blank), or "canonical-store-unavailable" (the saved worksheet could not be read; treat the figures as possibly out of date).
 
 Args:
   - budget_id (string): SAGE budget id, e.g. "B158116"
+  - worksheet_id (string, optional): the id the SAGE screen saves this device's worksheet under
 
 Read-only. Does not modify anything. Use sage_compute_totals to price a hypothetical set of rows.`,
       inputSchema: {
         budget_id: z.string().min(1).describe('SAGE budget id, e.g. "B158116"'),
+        worksheet_id: z.string().uuid().optional().describe('Device worksheet id from the SAGE screen; omit for the fixed award proposal'),
       },
       outputSchema: {
         id: z.string(),
@@ -226,12 +228,12 @@ Read-only. Does not modify anything. Use sage_compute_totals to price a hypothet
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async ({ budget_id }) => auditedCall(store, agentId, 'sage_get_budget', { budget_id }, async () => {
+    async ({ budget_id, worksheet_id }) => auditedCall(store, agentId, 'sage_get_budget', { budget_id, worksheet_id }, async () => {
       const budget = BUDGETS[budget_id]
       if (!budget) {
         return toolError(`Error: unknown budget_id '${budget_id}'. Known ids: ${Object.keys(BUDGETS).join(', ')}`)
       }
-      const live = await currentRows(store, budget)
+      const live = await currentRows(store, budget, worksheet_id)
       const totals = pickTotals(live.rows)
       return result({
         id: budget.id,
