@@ -1,25 +1,15 @@
-// This tab's worksheet id — see netlify/functions/worksheet.ts.
+// This page's worksheet id — see netlify/functions/worksheet.ts.
 //
-// Random, made once per browser tab and kept in sessionStorage, so every
-// device, and every tab on it, has its own saved B158116 worksheet without
-// signing in. A reload keeps the tab's id. Separate tabs get separate ids so
-// opening a second tab cannot overwrite the first tab's saved numbers. If
-// storage is unavailable the id lasts for this page load only.
+// Random and made fresh on every page load, so every device, tab, duplicated
+// tab and reload has its own saved B158116 worksheet without signing in, and
+// no two pages can ever write the same one. Nothing is kept across a reload
+// on purpose: the worksheet itself starts blank on reload, so an old id would
+// only point at numbers the screen no longer shows.
 
-const KEY = 'sage-worksheet-id'
-let fallbackId: string | null = null
+const PAGE_WORKSHEET_ID = crypto.randomUUID()
 
 export function worksheetId(): string {
-  try {
-    const existing = window.sessionStorage.getItem(KEY)
-    if (existing) return existing
-    const id = crypto.randomUUID()
-    window.sessionStorage.setItem(KEY, id)
-    return id
-  } catch {
-    fallbackId ??= crypto.randomUUID()
-    return fallbackId
-  }
+  return PAGE_WORKSHEET_ID
 }
 
 // Sends this tab's worksheet to the server one save at a time. While a save
@@ -47,8 +37,7 @@ export function createWorksheetSaver(
     inFlight = true
     let current = rows
     for (let attempt = 0; ; attempt++) {
-      // Date.now() keeps revs rising across reloads of the same tab.
-      rev = Math.max(rev + 1, Date.now())
+      rev += 1
       let outcome: SaveOutcome
       try {
         outcome = await send(current, rev)
