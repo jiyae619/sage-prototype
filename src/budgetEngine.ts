@@ -62,6 +62,13 @@ export const AI_PREFILL: WorkspaceRow[] = [
   { id: 'fa',     cellRef: 'F15', category: 'fa',        label: 'F&A indirect costs', role: 'Auto · 57.5% MTDC',         faRate: 57.5, excludedFromMtdc: true },
 ]
 
+// Tuition and F&A never count toward the MTDC base, whatever the optional
+// excludedFromMtdc flag says. The flag still lets other rows opt out, but a
+// tuition row sent over MCP without it must not attract F&A.
+function inMtdcBase(r: WorkspaceRow): boolean {
+  return r.category !== 'fa' && r.category !== 'tuition' && !r.excludedFromMtdc
+}
+
 export function computeSubtotal(row: WorkspaceRow, allRows: WorkspaceRow[]): number {
   switch (row.category) {
     case 'personnel': {
@@ -78,7 +85,7 @@ export function computeSubtotal(row: WorkspaceRow, allRows: WorkspaceRow[]): num
     case 'tuition':
       return Math.round((row.tuitionPerQuarter || 0) * (row.numStudents || 0) * (row.months ? row.months / 3 : 0))
     case 'fa': {
-      const dcRows = allRows.filter(r => r.category !== 'fa' && !r.excludedFromMtdc)
+      const dcRows = allRows.filter(inMtdcBase)
       const mtdcBase = dcRows.reduce((s, r) => s + computeSubtotal(r, allRows), 0)
       return Math.round(mtdcBase * (row.faRate || 0) / 100)
     }
@@ -97,7 +104,7 @@ export function totalsOf(rows: WorkspaceRow[]) {
     .map((r, i) => r.category === 'fa' ? subtotals[i] : 0)
     .reduce((a, b) => a + b, 0)
   const mtdcBase = rows
-    .map((r, i) => r.category !== 'fa' && !r.excludedFromMtdc ? subtotals[i] : 0)
+    .map((r, i) => inMtdcBase(r) ? subtotals[i] : 0)
     .reduce((a, b) => a + b, 0)
   return { subtotals, total, directCosts, fa, mtdcBase }
 }

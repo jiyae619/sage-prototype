@@ -69,6 +69,18 @@ describe('B158116 golden values', () => {
     expect(t.mtdcBase).toBe(t.directCosts - tuition)
     expect(t.fa).toBe(Math.round(t.mtdcBase * 57.5 / 100))
   })
+
+  it('keeps tuition out of the MTDC base even when the row omits excludedFromMtdc', () => {
+    // Found by the merge gate (2026-11-10, confirmed 2/2): sage_compute_totals
+    // accepts rows from an agent, and excludedFromMtdc is optional in its
+    // schema. A tuition row sent without the flag used to attract F&A, so
+    // $1,000 of tuition priced at $1,500. Exemption follows the category.
+    const rows: WorkspaceRow[] = [
+      { id: 't', cellRef: '', category: 'tuition', label: '', role: '', tuitionPerQuarter: 1000, numStudents: 1, months: 3 },
+      { id: 'f', cellRef: '', category: 'fa', label: '', role: '', faRate: 50 },
+    ]
+    expect(totalsOf(rows)).toMatchObject({ mtdcBase: 0, fa: 0, total: 1000 })
+  })
 })
 
 describe('formula engine', () => {
