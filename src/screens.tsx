@@ -1,4 +1,4 @@
-import { useState, useRef, Fragment } from 'react'
+import { useState, useRef, useEffect, Fragment } from 'react'
 import {
   Button, Pill, ConfidenceChip, SourceTag,
   AIDisclaimer, Header, Footer,
@@ -7,65 +7,25 @@ import {
   SubTabs, HoverTip,
   type Issue, type TabKey, type AwardsStep,
 } from './ui'
+import { b158116Rows } from './budgetRows'
+import {
+  type RowRole, type WorkspaceRow,
+  BLANK_ROWS, AI_PREFILL, computeSubtotal, totalsOf,
+} from './budgetEngine'
 
 export type { Issue } from './ui'
+export type { RowRole, WorkspaceRow } from './budgetEngine'
+export { BLANK_ROWS, AI_PREFILL, computeSubtotal }
 
 // =====================================================================
 // TYPES, CONSTANTS, FORMULA ENGINE
 // =====================================================================
-
-export type RowRole = '' | 'Main-PI' | 'Co-PI' | 'Grad-PhD' | 'Grad-Master' | 'Bachelor' | 'TBD-Subaward' | 'Other'
-
-export type WorkspaceRow = {
-  id: string;
-  cellRef: string;
-  category: 'personnel' | 'fringe' | 'travel' | 'supplies' | 'equipment' | 'tuition' | 'fa';
-  label: string;
-  role: string;
-  roleType?: RowRole;
-  monthlySalary?: number;
-  effortPct?: number;
-  months?: number;
-  inflationRate?: number;
-  amount?: number;
-  fringeRate?: number;
-  numStudents?: number;
-  tuitionPerQuarter?: number;
-  faRate?: number;
-  excludedFromMtdc?: boolean;
-  autoPopulated?: boolean;
-  verified?: boolean;
-}
-
-export const BLANK_ROWS: WorkspaceRow[] = [
-  { id: 'per1',   cellRef: 'F4',  category: 'personnel', label: '', role: '', roleType: '' },
-  { id: 'per2',   cellRef: 'F5',  category: 'personnel', label: '', role: '', roleType: '' },
-  { id: 'per3',   cellRef: 'F6',  category: 'personnel', label: '', role: '', roleType: '' },
-  { id: 'per4',   cellRef: 'F7',  category: 'personnel', label: '', role: '', roleType: '' },
-  { id: 'per5',   cellRef: 'F8',  category: 'personnel', label: '', role: '', roleType: '' },
-  { id: 'per6',   cellRef: 'F9',  category: 'personnel', label: '', role: '', roleType: '' },
-  { id: 'fringe', cellRef: 'F10', category: 'fringe',    label: '', role: '' },
-  { id: 'travel', cellRef: 'C11', category: 'travel',    label: '', role: '' },
-  { id: 'sup',    cellRef: 'F12', category: 'supplies',  label: '', role: '' },
-  { id: 'eq',     cellRef: 'F13', category: 'equipment', label: '', role: '' },
-  { id: 'tuit',   cellRef: 'F14', category: 'tuition',   label: '', role: '', excludedFromMtdc: true },
-  { id: 'fa',     cellRef: 'F15', category: 'fa',        label: '', role: '', excludedFromMtdc: true },
-]
-
-export const AI_PREFILL: WorkspaceRow[] = [
-  { id: 'per1',   cellRef: 'F4',  category: 'personnel', label: 'Harry Potter',       role: 'Main PI · OD',        roleType: 'Main-PI',     monthlySalary: 16826, effortPct: 10, months: 9 },
-  { id: 'per2',   cellRef: 'F5',  category: 'personnel', label: 'Alastor Moody',      role: 'Co-PI · OD',          roleType: 'Co-PI',       monthlySalary: 16822, effortPct: 5,  months: 9 },
-  { id: 'per3',   cellRef: 'F6',  category: 'personnel', label: 'Remus Lupin',        role: 'Co-PI',               roleType: 'Co-PI',       monthlySalary: 16822, effortPct: 5,  months: 9 },
-  { id: 'per4',   cellRef: 'F7',  category: 'personnel', label: 'Minerva McGonagall', role: 'Co-PI · MD',          roleType: 'Co-PI',       monthlySalary: 21867, effortPct: 5,  months: 9 },
-  { id: 'per5',   cellRef: 'F8',  category: 'personnel', label: 'Draco Malfoy',       role: 'Candidate · Sch 1',   roleType: 'Grad-PhD',    monthlySalary: 3621,  effortPct: 50, months: 9 },
-  { id: 'per6',   cellRef: 'F9',  category: 'personnel', label: 'Neville Longbottom', role: "Master's · Sch 1",    roleType: 'Grad-Master', monthlySalary: 3219,  effortPct: 50, months: 9 },
-  { id: 'fringe', cellRef: 'F10', category: 'fringe',    label: 'Fringe benefits',    role: 'Faculty 27% / Grad 18.2% blended', fringeRate: 22.7 },
-  { id: 'travel', cellRef: 'C11', category: 'travel',    label: 'ARVO Annual Meeting',role: '1 PI · 4 nights · Seattle', amount: 3281 },
-  { id: 'sup',    cellRef: 'F12', category: 'supplies',  label: 'Lab supplies',       role: 'Vision lab consumables',    amount: 5000 },
-  { id: 'eq',     cellRef: 'F13', category: 'equipment', label: 'OCT Imaging Module', role: 'Heidelberg SPECTRALIS',     amount: 5000 },
-  { id: 'tuit',   cellRef: 'F14', category: 'tuition',   label: 'Grad RA tuition',    role: '2 students · 3 quarters · OPB FY24', tuitionPerQuarter: 7257, numStudents: 2, months: 9, excludedFromMtdc: true },
-  { id: 'fa',     cellRef: 'F15', category: 'fa',        label: 'F&A indirect costs', role: 'Auto · 57.5% MTDC',         faRate: 57.5, excludedFromMtdc: true },
-]
+//
+// The row type, seed data, and pricing math (RowRole, WorkspaceRow,
+// BLANK_ROWS, AI_PREFILL, computeSubtotal, totalsOf) live in ./budgetEngine,
+// imported above — netlify/functions/mcp/budget.ts imports that same module
+// rather than holding its own copy. What remains here is UI-only: past
+// proposals, role config, and the reconciliation issue list.
 
 // Past proposals — drives the "Check Proposal History" window
 type PastProposal = {
@@ -270,46 +230,6 @@ function snapRowsToTarget(rows: WorkspaceRow[], target: number): WorkspaceRow[] 
     next = next.map(r => r.id === 'sup' ? { ...r, amount: (r.amount || 0) + final } : r)
   }
   return next
-}
-
-export function computeSubtotal(row: WorkspaceRow, allRows: WorkspaceRow[]): number {
-  switch (row.category) {
-    case 'personnel': {
-      const monthly = row.monthlySalary || 0
-      const adjusted = monthly * (1 + (row.inflationRate || 0) / 100)
-      return Math.round(adjusted * ((row.effortPct || 0) / 100) * (row.months || 0))
-    }
-    case 'fringe': {
-      const personnelTotal = allRows
-        .filter(r => r.category === 'personnel')
-        .reduce((s, r) => s + computeSubtotal(r, allRows), 0)
-      return Math.round(personnelTotal * (row.fringeRate || 0) / 100)
-    }
-    case 'tuition':
-      return Math.round((row.tuitionPerQuarter || 0) * (row.numStudents || 0) * (row.months ? row.months / 3 : 0))
-    case 'fa': {
-      const dcRows = allRows.filter(r => r.category !== 'fa' && !r.excludedFromMtdc)
-      const mtdcBase = dcRows.reduce((s, r) => s + computeSubtotal(r, allRows), 0)
-      return Math.round(mtdcBase * (row.faRate || 0) / 100)
-    }
-    default:
-      return row.amount || 0
-  }
-}
-
-function totalsOf(rows: WorkspaceRow[]) {
-  const subtotals = rows.map(r => computeSubtotal(r, rows))
-  const total = subtotals.reduce((a, b) => a + b, 0)
-  const directCosts = rows
-    .map((r, i) => r.category === 'fa' ? 0 : subtotals[i])
-    .reduce((a, b) => a + b, 0)
-  const fa = rows
-    .map((r, i) => r.category === 'fa' ? subtotals[i] : 0)
-    .reduce((a, b) => a + b, 0)
-  const mtdcBase = rows
-    .map((r, i) => r.category !== 'fa' && !r.excludedFromMtdc ? subtotals[i] : 0)
-    .reduce((a, b) => a + b, 0)
-  return { subtotals, total, directCosts, fa, mtdcBase }
 }
 
 const SECTIONS = [
@@ -1926,6 +1846,44 @@ function Stat({ k, v, sub, confidence, source }: { k: string; v: string; sub?: s
 // PersonnelPanel — new right-panel design (matches the user's reference)
 // =====================================================================
 
+// Annual tuition and fees for a graduate role, from /api/sage/tuition (which
+// asks the MCP server's sage_get_tuition). The figures are read from the UW
+// dashboard's image, so the UI must keep saying so wherever it shows one.
+type TuitionQuote = { grand_total: number; program: string; category: string; year: string; crawled_at: string }
+type TuitionLookup =
+  | { status: 'off' | 'loading' }
+  | { status: 'ok'; quote: TuitionQuote }
+  | { status: 'none' | 'unavailable'; message: string }
+
+const TUITION_CAMPUSES = ['Seattle', 'Bothell', 'Tacoma']
+const TUITION_RESIDENCIES = ['Resident', 'Nonresident']
+
+function useTuitionLookup(level: 'Masters' | 'Doctoral' | null, campus: string, residency: string): TuitionLookup {
+  const key = level ? `${campus}|${residency}|${level}` : null
+  const [answer, setAnswer] = useState<{ key: string; lookup: TuitionLookup } | null>(null)
+
+  useEffect(() => {
+    if (!key || !level) return
+    let cancelled = false
+    const finish = (lookup: TuitionLookup) => { if (!cancelled) setAnswer({ key, lookup }) }
+    fetch(`/api/sage/tuition?${new URLSearchParams({ campus, residency, level })}`)
+      .then(async res => {
+        // A deployment without the function answers with the SPA's index.html.
+        if (!(res.headers.get('content-type') ?? '').includes('json')) {
+          return finish({ status: 'unavailable', message: 'Live lookup is not available here' })
+        }
+        const body = await res.json()
+        if (res.ok) return finish({ status: 'ok', quote: body as TuitionQuote })
+        finish({ status: res.status === 404 ? 'none' : 'unavailable', message: body.error ?? `HTTP ${res.status}` })
+      })
+      .catch(() => finish({ status: 'unavailable', message: 'Live lookup is not available here' }))
+    return () => { cancelled = true }
+  }, [key, level, campus, residency])
+
+  if (!key) return { status: 'off' }
+  return answer?.key === key ? answer.lookup : { status: 'loading' }
+}
+
 function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
   row: WorkspaceRow; allRows: WorkspaceRow[]; period: number;
   onUpdate: (id: string, patch: Partial<WorkspaceRow>) => void;
@@ -1935,6 +1893,10 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
   const sub = computeSubtotal(row, allRows)
   const cfg = roleConfigFor(row.roleType)
   const [cascade, setCascade] = useState(true)
+  const [campus, setCampus] = useState(TUITION_CAMPUSES[0])
+  const [residency, setResidency] = useState(TUITION_RESIDENCIES[0])
+  const tuitionLevel = row.roleType === 'Grad-PhD' ? 'Doctoral' : row.roleType === 'Grad-Master' ? 'Masters' : null
+  const tuition = useTuitionLookup(tuitionLevel, campus, residency)
 
   // No role picked yet — show prompt
   if (!row.roleType || !cfg) {
@@ -1993,6 +1955,12 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
             <DropField label="LEVEL"         value={cfg.level}   options={cfg.levels} />
             <DropField label="BASE FTE"      value={fteValue}    options={cfg.ftes}
               onChange={v => onUpdate(row.id, { effortPct: Number(v.replace(/[^0-9]/g, '')) || 0 })} />
+            {tuitionLevel && (
+              <>
+                <DropField label="CAMPUS"    value={campus}    options={TUITION_CAMPUSES}    onChange={setCampus} />
+                <DropField label="RESIDENCY" value={residency} options={TUITION_RESIDENCIES} onChange={setResidency} />
+              </>
+            )}
           </div>
         )}
 
@@ -2118,11 +2086,33 @@ function PersonnelPanel({ row, allRows, period, onUpdate, onVerify, onClose }: {
               <div className="font-semibold text-ink">{cfg.fringeRate}% <span className="text-[10px] text-mute font-normal">(OMA, FY26)</span></div>
               <div className="text-[10px] text-sage-700 font-medium mt-0.5">FY26 rate · UW Finance · May 18, 2026</div>
             </div>
-            {cfg.tuitionAnnual > 0 && (
+            {cfg.tuitionAnnual > 0 && tuition.status === 'ok' && (
+              <div>
+                <div className="text-[10px] text-mute">Tuition &amp; fees</div>
+                <div className="font-semibold text-ink">${tuition.quote.grand_total.toLocaleString()}/yr <span className="text-[10px] text-mute font-normal">({tuition.quote.year})</span></div>
+                <div className="text-[10px] text-mute mt-0.5">{tuition.quote.program} · {tuition.quote.category}</div>
+                <div className="text-[10px] text-amber-700 font-medium mt-0.5">Read from the UW dashboard image, {new Date(tuition.quote.crawled_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} · confirm before use</div>
+              </div>
+            )}
+            {cfg.tuitionAnnual > 0 && tuition.status === 'loading' && (
+              <div>
+                <div className="text-[10px] text-mute">Tuition &amp; fees</div>
+                <div className="text-mute">Looking up…</div>
+              </div>
+            )}
+            {cfg.tuitionAnnual > 0 && tuition.status === 'none' && (
+              <div>
+                <div className="text-[10px] text-mute">Tuition &amp; fees</div>
+                <div className="font-semibold text-ink">No figure</div>
+                <div className="text-[10px] text-amber-700 font-medium mt-0.5">The dashboard lists no {tuitionLevel} programs for {campus}</div>
+              </div>
+            )}
+            {cfg.tuitionAnnual > 0 && (tuition.status === 'unavailable' || tuition.status === 'off') && (
               <div>
                 <div className="text-[10px] text-mute">Tuition</div>
                 <div className="font-semibold text-ink">${cfg.tuitionAnnual.toLocaleString()}/yr <span className="text-[10px] text-mute font-normal">(OPB, FY26)</span></div>
                 <div className="text-[10px] text-sage-700 font-medium mt-0.5">FY26 rate · OPB · May 18, 2026</div>
+                {tuition.status === 'unavailable' && <div className="text-[10px] text-mute mt-0.5">{tuition.message}</div>}
               </div>
             )}
           </div>
@@ -2806,7 +2796,10 @@ function StepCard({ n, status, statusLabel, title, desc }: {
 
 export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitted, savedBudgets }: Nav) {
   const isFilled = rows.some(r => r.label !== '' || r.amount || r.monthlySalary)
-  const totals = totalsOf(rows)
+  // B158116's own figures (not "linked saved budget" figures) must match the MCP
+  // server even when the live worksheet is blank — see b158116Rows.
+  const linkedRows = b158116Rows(rows, AI_PREFILL)
+  const totals = totalsOf(linkedRows)
   const allKnownBudgets = [
     { id: 'B158116', title: 'Eye Conditions Evaluation' },
     ...savedBudgets,
@@ -2822,11 +2815,11 @@ export function EGC1FormsScreen({ go, toast, rows, egc1Submitted, setEgc1Submitt
 
   // Map workspace categories to FAS object codes. Only flow figures into the
   // eGC1 table when the chosen budget is the one tied to this workspace.
-  const personnelSum = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'personnel').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
-  const fringeSum    = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'fringe').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
-  const travelSum    = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'travel').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
-  const suppliesSum  = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'supplies' || r.category === 'equipment').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
-  const tuitionSum   = budgetIsLinkedToWorkspace ? rows.filter(r => r.category === 'tuition').reduce((s, r) => s + computeSubtotal(r, rows), 0) : 0
+  const personnelSum = budgetIsLinkedToWorkspace ? linkedRows.filter(r => r.category === 'personnel').reduce((s, r) => s + computeSubtotal(r, linkedRows), 0) : 0
+  const fringeSum    = budgetIsLinkedToWorkspace ? linkedRows.filter(r => r.category === 'fringe').reduce((s, r) => s + computeSubtotal(r, linkedRows), 0) : 0
+  const travelSum    = budgetIsLinkedToWorkspace ? linkedRows.filter(r => r.category === 'travel').reduce((s, r) => s + computeSubtotal(r, linkedRows), 0) : 0
+  const suppliesSum  = budgetIsLinkedToWorkspace ? linkedRows.filter(r => r.category === 'supplies' || r.category === 'equipment').reduce((s, r) => s + computeSubtotal(r, linkedRows), 0) : 0
+  const tuitionSum   = budgetIsLinkedToWorkspace ? linkedRows.filter(r => r.category === 'tuition').reduce((s, r) => s + computeSubtotal(r, linkedRows), 0) : 0
 
   const codes = [
     { code: '01', desc: 'Salaries and Wages',          period1: personnelSum },
@@ -3864,9 +3857,10 @@ export function FilesScreen({ toast, noaUploaded, egc1Submitted }: Nav) {
 // =====================================================================
 
 export function BudgetsScreen(props: Nav) {
-  const { go, toast, openBudgetId, setOpenBudgetId, rows: wsRows, asrSubmitCount, savedBudgets } = props
+  const { go, toast, openBudgetId, setOpenBudgetId, rows: rawRows, asrSubmitCount, savedBudgets } = props
   if (openBudgetId === 'B158116') return <BudgetDetailView {...props} />
 
+  const wsRows = b158116Rows(rawRows, AI_PREFILL)
   const piRow = wsRows.find(r => r.category === 'personnel' && r.label)
   const totals = totalsOf(wsRows)
   const submittedEntries = Array.from({ length: asrSubmitCount }, (_, i) => ({
@@ -3931,7 +3925,8 @@ export function BudgetsScreen(props: Nav) {
 
 // Budget detail — auto-populated from Worksheet rows (image #8 layout)
 function BudgetDetailView(props: Nav) {
-  const { go, toast, rows, setOpenBudgetId, reconciliationActive } = props
+  const { go, toast, rows: rawRows, setOpenBudgetId, reconciliationActive } = props
+  const rows = b158116Rows(rawRows, AI_PREFILL)
   const totals = totalsOf(rows)
   const [section, setSection] = useState<'summary'|'worksheet'>('summary')
 

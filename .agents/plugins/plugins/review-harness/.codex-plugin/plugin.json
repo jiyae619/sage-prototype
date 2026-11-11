@@ -1,0 +1,32 @@
+{
+  "name": "review-harness",
+  "version": "0.1.0",
+  "description": "Deterministic review gate for sage-prototype: runs the repo's own checks, drives a bounded repair loop, then fans out schema-constrained judgment passes over the diff.",
+  "author": {
+    "name": "Jiyae Choi"
+  },
+  "license": "UNLICENSED",
+  "keywords": [
+    "code-review",
+    "test-gate",
+    "mcp",
+    "sage"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "SAGE Review Harness",
+    "shortDescription": "Gate a merge on real checks before a model gets an opinion",
+    "longDescription": "Stage 0 runs typecheck, tests and a lint baseline in code. Stage 1 is a bounded repair loop that stops on no-progress. Stage 2 asks Codex for code-analysis and test-evaluation judgments, each constrained to a JSON schema. Stage 3 computes the verdict in code. The model never decides whether the gate passed.",
+    "developerName": "Jiyae Choi",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Gate the mcp-build branch for merge into main",
+      "Why did the review gate block this change?",
+      "Evaluate whether the new tests actually cover the diff"
+    ]
+  }
+}

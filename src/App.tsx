@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { saveWorksheet } from './worksheetSync'
 import { TopNav, FeedbackToast, TutorialOverlay, type TutorialStep, type TabKey, type AwardsStep } from './ui'
 import {
   WorkspaceScreen,
@@ -101,6 +102,15 @@ export default function App() {
   // Cross-tab shared state
   const [issues, setIssues] = useState<Issue[]>(capturePreset.issues ?? [])
   const [rows, setRows] = useState<WorkspaceRow[]>(capturePreset.rows ?? BLANK_ROWS)
+  // Save this tab's worksheet so sage_get_budget, given the tab's
+  // worksheet id, prices B158116 from the same rows these screens do
+  // (src/worksheetSync.ts). Debounced so typing a salary is one save, not
+  // one per keystroke. Capture scenes are staged screenshots and are not saved.
+  useEffect(() => {
+    if (captureScene) return
+    const timer = setTimeout(() => saveWorksheet(rows), 600)
+    return () => clearTimeout(timer)
+  }, [rows, captureScene])
   const [proposedTotal, setProposedTotal] = useState<number>(capturePreset.proposedTotal ?? 0)
   const [noaUploaded, setNoaUploaded] = useState(capturePreset.noaUploaded ?? false)
   const [reconciliationActive, setReconciliationActive] = useState(capturePreset.reconciliationActive ?? false)

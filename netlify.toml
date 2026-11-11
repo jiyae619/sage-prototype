@@ -5,6 +5,10 @@
 [build.environment]
   NODE_VERSION = "22"
 
+# `netlify dev` (frontend + /mcp function together) — Vite runs on 5190, see vite.config.ts
+[dev]
+  targetPort = 5190
+
 # SPA fallback — every route serves index.html (no router yet, but harmless)
 [[redirects]]
   from = "/*"

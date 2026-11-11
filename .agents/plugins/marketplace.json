@@ -1,0 +1,19 @@
+{
+  "name": "sage-repo",
+  "interface": {
+    "displayName": "SAGE (repo)"
+  },
+  "plugins": [
+    {
+      "name": "review-harness",
+      "source": {
+        "source": "local",
+        "path": "./.agents/plugins/plugins/review-harness"
+      },
+      "policy": {
+        "installation": "AVAILABLE"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
